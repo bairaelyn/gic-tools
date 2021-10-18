@@ -1,0 +1,13 @@
+{
+    "name": "Horton2012 Grid Substation-1",
+    "number": "1",
+    "network_code": "SUB1",
+    "transformer_code": "SUB1_LV",
+    "lat": 33.6135,
+    "lon": -87.3737,
+    "transformer_type": "GSU with GIC BD",
+    "voltage_level": "345kV",
+    "start_date": "2012-10-04",
+    "end_date": "None",
+    "notes": "This is a fictional substation from the Horton et al. (2012) paper: A Test Case for the Calculation of Geomagnetically Induced Currents."
+}
