@@ -243,6 +243,48 @@ def read_gic_file(filepath, skiplines=11):
     return gic_data
 
 
+def read_minute_data(trange, data_path, verbose=False):
+    """
+    Reads a single file in field format with field values per lat & lon.
+    If interpol==True, field will be returned after interpolation.
+
+    Parameters:
+    -----------
+    trange :: [start time, end time], list of datetime objs
+        Start time and end time of range to read.
+    data_path :: str
+        Path to minute data directiory.
+    verbose :: bool (default=False)
+        If True, prints debugging messages.
+
+    Returns:
+    --------
+    df_gic :: pandas.DataFrame
+        DF with all the data within the time range.
+    """
+
+    starttime, endtime = trange[0], trange[1]
+    dates = [starttime + timedelta(days=n) for n in range((endtime-starttime).days)]
+    prefix = 'GICMEAS'
+
+    gic_days, missing_files = {}, []
+    for i_day, date in enumerate(dates):
+        datestr = date.strftime("%Y-%m-%d")
+        filepath = os.path.join(data_path, '{}_{}.csv'.format(prefix, datestr))
+        if os.path.exists(filepath):
+            gic_data = pd.read_csv(filepath)
+        else:
+            missing_files.append(datestr)
+            gic_data = pd.DataFrame()
+
+        df_gic = gic_data if i_day==0 else df_gic.append(gic_data, ignore_index=True)
+
+    if len(missing_files) > 0 and verbose:
+        print("WARNING: Missing files for the following days: {}".format(missing_files))
+
+    return df_gic
+
+
 def write_gic_minute_data(trange, data_path, save_path="mindata", st_json_dir="stations", verbose=True):
     """Writes daily minute data files (.csv) containing all measurements for that day.
 

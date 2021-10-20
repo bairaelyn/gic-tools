@@ -11,5 +11,9 @@ class TestGICTOOLS(unittest.TestCase):
         self.assertTrue(SUB1.has_data_on("2021-03-05"))
         self.assertFalse(SUB1.has_data_on("2011-03-05"))
 
+    def test_efield(self):
+        # to-do
+        return
+
 if __name__ == '__main__':
     unittest.main()
