@@ -4,6 +4,8 @@
 gictools.meas
 
 Tools for handling GIC measurement data and stations.
+Most of these functions are specific to files containing 
+measurements in Austria.
 
 Created 2015-2021 by R Bailey, ZAMG Conrad Observatory (Vienna).
 Last updated October 2021.
@@ -192,7 +194,7 @@ def list_stations_with_data_on(testdate, json_dir):
     return avail_st
 
 
-def list_all_measurement_stations(json_dir):
+def list_all_measurement_stations(json_dir, return_nums=False):
     """Returns a list of the GIC measurement stations available.
 
     Parameters:
@@ -208,20 +210,115 @@ def list_all_measurement_stations(json_dir):
 
     files = os.listdir(json_dir)
     json_files = [x for x in files if '.json' in x]
+    json_files.sort()
 
-    all_st = []
+    all_st, all_cl = [], []
     for json_file in json_files:
-        all_st.append(json_file.strip(".json"))
+        all_st.append(json_file.strip(".json").split('-')[1])
+        all_cl.append(json_file.split('-')[0])
 
-    return all_st
+    if return_nums:
+        return all_st, all_cl
+    else:
+        return all_st
 
 
-def read_gic_file(filepath, skiplines=11):
+def plot_gic_measurements(gic_mea, station_path, plotdir='', ylim=0.58, verbose=False):
+    """Plots the GIC measurements at all available stations for a specific period.
+
+    Parameters:
+    -----------
+    gic_mea :: pd.DataFrame
+        Array containing GIC data (use read_minute_data())
+    station_path :: str
+        Path detailing where the current list of measurement stations are.
+    plotdir :: str (default='')
+        Path to where the plots should be saved, if wanted.
+    ylim :: float (default=0.5)
+        Default value for +/- y limits on the plot.
+
+    Returns:
+    --------
+    - :: -
+        ...
+    """
+
+    import matplotlib
+    import matplotlib.cm
+    import matplotlib.pyplot as plt
+
+    try: import seaborn as sns
+    except: pass
+    
+    if 'seaborn' in sys.modules:
+        gic_colours = list(sns.color_palette())
+    else:
+        cmap = matplotlib.cm.get_cmap('tab10', 10)
+        gic_colours = [matplotlib.colors.rgb2hex(cmap(i)[:3]) for i in range(cmap.N)]
+
+    # Get list of all measurement stations:
+    all_stations = list_all_measurement_stations(station_path)
+
+    daystr_start = gic_mea['time'].iloc[0][:10]
+    daystr_end =   gic_mea['time'].iloc[-1][:10]
+    n_days = (datetime.strptime(daystr_end, '%Y-%m-%d') - datetime.strptime(daystr_start, '%Y-%m-%d')).days + 1
+
+    clients = list(gic_mea.columns)
+    clients.remove('time')
+    clients = [c for c in all_stations if c in clients]
+    n_clients = len(clients)
+
+    fig, axes = plt.subplots(n_clients,1, figsize=(12,2.5*n_clients+1), sharex=True)
+    if n_clients == 1:
+        axes = [axes]
+
+    # Loop for each subplot:
+    print("Plotting data for {} days...".format(n_days))
+    for icl, cl in enumerate(clients):
+        # Plot:
+        axes[icl].plot_date(gic_mea['time'], gic_mea[cl], '-', c=gic_colours[all_stations.index(cl)], lw=1)
+        y_pos = 0.75 + 0.25/n_clients
+        axes[icl].text(0.01, y_pos, "{}".format(cl), transform=axes[icl].transAxes, fontsize=12)
+        axes[icl].set_ylabel("DC [A]")
+
+        # Set axis limits:
+        max_val = np.max(np.abs(gic_mea[cl]))*1.1
+        if np.max(np.abs(gic_mea[cl])) > ylim:
+            axes[icl].set_ylim(-max_val, max_val)
+        else:
+            axes[icl].set_ylim(-ylim, ylim)
+
+    print("Editing labels...")
+    if n_days == 1:
+        axes[0].set_title("GICs on {}".format(daystr_start))
+    else:
+        axes[0].set_title("GICs from {} till {}".format(daystr_start, daystr_end))
+
+    custom_ticks = range(0, len(gic_mea), int(len(gic_mea)/10))
+    timestamps = gic_mea['time'][::int(len(gic_mea)/10)]
+
+    axes[-1].set_xticklabels(labels=timestamps, rotation=45)
+    axes[-1].set_xticks(custom_ticks)
+    axes[-1].set_xlim((gic_mea['time'].iloc[0], gic_mea['time'].iloc[-1]))
+    axes[-1].set_xlabel("Time (UTC)")
+    plt.subplots_adjust(hspace=0)
+
+    if len(plotdir) != 0:
+        plotpath = os.path.join(plotdir,"GICs_{}.png".format(daystr))
+        print("Saving plot to {}.".format(plotpath))
+        plt.savefig(plotpath)
+    else:
+        plt.show()
+
+    plt.clf()
+
+
+def read_gic_file(data_path, skiplines=11):
     """For reading original .txt-format GIC files from Austria.
 
     Parameters:
     -----------
-    filepath :: str
+    data_path :: str
         Path to file to be read.
     skiplines :: int (default=11)
         Header lines to skip when reading raw data file.
@@ -231,9 +328,9 @@ def read_gic_file(filepath, skiplines=11):
     gic_data :: np.ndarray
         Structured array of GIC data with cols 'time', 'temp', 'dc'.
     """
-    datestr = os.path.split(filepath)[-1].strip('.txt').split('_')[-1]
+    datestr = os.path.split(data_path)[-1].strip('.txt').split('_')[-1]
     datestr = datestr[:4]+'-'+datestr[4:6]+'-'+datestr[6:]
-    datafile = open(filepath, 'rb')
+    datafile = open(data_path, 'rb')
     datastr = datafile.readlines()
     gic_data = np.genfromtxt(datastr[skiplines:], delimiter=';', usecols=(1,2,3),
                              dtype={'names':('time', 'temp', 'dc'), 'formats':('<M8[s]', '<f8', '<f8')},
@@ -243,10 +340,9 @@ def read_gic_file(filepath, skiplines=11):
     return gic_data
 
 
-def read_minute_data(trange, data_path, verbose=False):
+def read_minute_data(trange, data_path, prefix='GICMEAS', verbose=False):
     """
-    Reads a single file in field format with field values per lat & lon.
-    If interpol==True, field will be returned after interpolation.
+    Reads a single file with GIC measurements. Replies on pd.DataFrames.
 
     Parameters:
     -----------
@@ -265,7 +361,6 @@ def read_minute_data(trange, data_path, verbose=False):
 
     starttime, endtime = trange[0], trange[1]
     dates = [starttime + timedelta(days=n) for n in range((endtime-starttime).days)]
-    prefix = 'GICMEAS'
 
     gic_days, missing_files = {}, []
     for i_day, date in enumerate(dates):
@@ -287,6 +382,8 @@ def read_minute_data(trange, data_path, verbose=False):
 
 def write_gic_minute_data(trange, data_path, save_path="mindata", st_json_dir="stations", verbose=True):
     """Writes daily minute data files (.csv) containing all measurements for that day.
+    The 1-second data is resampled using a simple 1-minute median function shifted by
+    thirty seconds to be centred.
 
     Parameters:
     -----------
@@ -304,7 +401,11 @@ def write_gic_minute_data(trange, data_path, save_path="mindata", st_json_dir="s
     None
     """
 
-    all_st = list_all_measurement_stations(st_json_dir)
+    all_st, all_cl = list_all_measurement_stations(st_json_dir, return_nums=True)
+
+    MSt = {}
+    for station, client in zip(all_st, all_cl):
+        MSt[station] = MeasurementStation(os.path.join(st_json_dir, client+'-'+station+".json"))
 
     # Create path for files if it does not exist:
     if not os.path.exists(save_path):
@@ -321,12 +422,12 @@ def write_gic_minute_data(trange, data_path, save_path="mindata", st_json_dir="s
 
         # Check which stations have measurements:
         for station in all_st:
-            MSt = MeasurementStation(os.path.join(st_json_dir, station+".json"))
 
-            path_to_data = os.path.join(data_path, 'GIC0{}'.format(MSt.clientnum),'GIC0{}_{}.txt').format(MSt.clientnum, dayf_)
+            path_to_data = os.path.join(data_path, 'GIC0{}'.format(MSt[station].clientnum),
+                                        'GIC0{}_{}.txt').format(MSt[station].clientnum, dayf_)
             if os.path.exists(path_to_data):
-                st_codes.append(MSt.code)
-                st_nums.append(MSt.clientnum)
+                st_codes.append(MSt[station].code)
+                st_nums.append(MSt[station].clientnum)
 
         # Read existing files:
         if len(st_codes) > 0:
@@ -363,3 +464,5 @@ def write_gic_minute_data(trange, data_path, save_path="mindata", st_json_dir="s
         print("Writing complete.")
 
     return
+
+

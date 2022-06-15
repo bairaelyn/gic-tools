@@ -133,7 +133,7 @@ def _calc_Z(freqs, resistivities, thicknesses):
     return Z_output
 
 
-def prepare_B_for_E_calc(mag_x, mag_y, mag_time, return_time=False, timestep='min'):
+def prepare_B_for_E_calc(mag_x_raw, mag_y_raw, mag_time, return_time=False, timestep='min'):
     """Takes x and y variations in the geomagnetic field and prepares the
     arrays for use in the plane wave calculation of E. This includes
     subtracting the mean, interpolating to regular timesteps and removing
@@ -141,10 +141,10 @@ def prepare_B_for_E_calc(mag_x, mag_y, mag_time, return_time=False, timestep='mi
 
     Parameters:
     -----------
-    mag_x, mag_y :: np.arrays
-        Arrays of x- and y-variations (raw data).
+    mag_x_raw, mag_y_raw :: np.arrays
+        Arrays of geomagnetic x- and y-variations (raw data).
     mag_time :: np.array of time in numerical matplotlib.dates date2num format
-        Array containing the time steps of mag_x and mag_y.
+        Array containing the time steps of mag_x_raw and mag_y_raw.
     return_time :: bool (default=False)
         If True, the new timesteps are also returned.
     timestep :: str (default='min')
@@ -152,9 +152,9 @@ def prepare_B_for_E_calc(mag_x, mag_y, mag_time, return_time=False, timestep='mi
 
     Returns:
     --------
-    (mag_x, mag_y) :: np.arrays (floats)
+    (mag_x_raw, mag_y_raw) :: np.arrays (floats)
         New, regular geomagnetic field measurements.
-    (mag_x, mag_y, time) if return_time==True ::
+    (mag_x_raw, mag_y_raw, time) if return_time==True ::
         time is returned in numerical matplotlib.dates date2num format.
     """
 
@@ -162,18 +162,18 @@ def prepare_B_for_E_calc(mag_x, mag_y, mag_time, return_time=False, timestep='mi
 
     # Remove nans and linearly interpolate over them:
     try:
-        nan_inds = np.isnan(mag_x)
-        mag_x[nan_inds] = np.interp(nan_inds.nonzero()[0], (~nan_inds).nonzero()[0], mag_x[~nan_inds])
+        nan_inds = np.isnan(mag_x_raw)
+        mag_x_raw[nan_inds] = np.interp(nan_inds.nonzero()[0], (~nan_inds).nonzero()[0], mag_x_raw[~nan_inds])
     except: # no nans present
         pass
     try:
-        nan_inds = np.isnan(mag_y)
-        mag_y[nan_inds] = np.interp(nan_inds.nonzero()[0], (~nan_inds).nonzero()[0], mag_y[~nan_inds])
+        nan_inds = np.isnan(mag_y_raw)
+        mag_y_raw[nan_inds] = np.interp(nan_inds.nonzero()[0], (~nan_inds).nonzero()[0], mag_y_raw[~nan_inds])
     except: # no nans present
         pass
 
     # Subtract the mean
-    mag_x, mag_y = mag_x - np.mean(mag_x), mag_y - np.mean(mag_y)
+    mag_x_raw, mag_y_raw = mag_x_raw - np.mean(mag_x_raw), mag_y_raw - np.mean(mag_y_raw)
 
     # Interpolate so that every point in time is covered:
     mag_start = num2date(mag_time[0])
@@ -183,9 +183,9 @@ def prepare_B_for_E_calc(mag_x, mag_y, mag_time, return_time=False, timestep='mi
     elif timestep == 'sec':
         n_steps = int((mag_time[-1] - mag_time[0])*24*60*60) + 1
         new_time = date2num(np.arange(mag_start, mag_start+timedelta(seconds=n_steps), timedelta(seconds=1)).astype(datetime))
-    mag_x, mag_y = np.interp(new_time, mag_time, mag_x), np.interp(new_time, mag_time, mag_y)
+    mag_x_raw, mag_y_raw = np.interp(new_time, mag_time, mag_x_raw), np.interp(new_time, mag_time, mag_y_raw)
 
     if return_time:
-        return (mag_x, mag_y, new_time)
+        return (mag_x_raw, mag_y_raw, new_time)
     else:
-        return (mag_x, mag_y)
+        return (mag_x_raw, mag_y_raw)
