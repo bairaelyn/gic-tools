@@ -17,5 +17,11 @@ config['DEFAULT'] = {'CodePath': '/path/to/code'}
 config['Measurements'] = {'StationDataPath': '/path/to/json/files',
                           'DataArchivePath': '/path/to/archive'}
 
+# Conductivity model used for modelling
+config['ConductivityModel'] = {'ModelNumber'  : '39',
+                               'Source'       : 'EURHOM',
+                               'Resistivities': '\t'.join(['1000', '300', '1000']),
+                               'Thicknesses'  : '\t'.join(['55000', '45000'])}
+
 with open('config_example.ini', 'w') as configfile:
     config.write(configfile)

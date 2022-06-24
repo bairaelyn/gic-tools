@@ -105,13 +105,13 @@ def _calc_Z(freqs, resistivities, thicknesses):
     k = np.sqrt(1j*omega[np.newaxis, :]*MU/resistivities[:, np.newaxis])
 
     # eq. 6
-    Z = np.zeros(shape=(n, nfreq), dtype=np.complex)
+    Z = np.zeros(shape=(n, nfreq), dtype=complex)
     # DC frequency produces divide by zero errors
     with np.errstate(divide='ignore', invalid='ignore'):
         Z[-1, :] = complex_factor/k[-1, :]
 
         # eq. 7 (reflection coefficient at interface)
-        r = np.zeros(shape=(n, nfreq), dtype=np.complex)
+        r = np.zeros(shape=(n, nfreq), dtype=complex)
 
         for i in range(n-2, -1, -1):
             r[i, :] = ((1-k[i, :]*Z[i+1, :]/complex_factor) /
@@ -124,7 +124,7 @@ def _calc_Z(freqs, resistivities, thicknesses):
         Z[:, 0] = 0.
 
     # Return a 3d impedance [0, Z; -Z, 0]
-    Z_output = np.zeros(shape=(4, nfreq), dtype=np.complex)
+    Z_output = np.zeros(shape=(4, nfreq), dtype=complex)
     # Only return the top layer impedance
     # Z_factor is conversion from H->B, 1.e-3/MU
     Z_output[1, :] = Z[0, :]*(1.e-3/MU)
@@ -176,7 +176,7 @@ def prepare_B_for_E_calc(mag_x_raw, mag_y_raw, mag_time, return_time=False, time
     mag_x_raw, mag_y_raw = mag_x_raw - np.mean(mag_x_raw), mag_y_raw - np.mean(mag_y_raw)
 
     # Interpolate so that every point in time is covered:
-    mag_start = num2date(mag_time[0])
+    mag_start = num2date(mag_time[0]).replace(tzinfo=None)
     if timestep == 'min':
         n_steps = int((mag_time[-1] - mag_time[0])*24*60) + 1
         new_time = date2num(np.arange(mag_start, mag_start+timedelta(minutes=n_steps), timedelta(minutes=1)).astype(datetime))

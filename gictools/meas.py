@@ -249,7 +249,7 @@ def plot_gic_measurements(gic_mea, station_path, plotdir='', ylim=0.58, verbose=
 
     try: import seaborn as sns
     except: pass
-    
+
     if 'seaborn' in sys.modules:
         gic_colours = list(sns.color_palette())
     else:
