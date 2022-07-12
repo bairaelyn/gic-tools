@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 import json
 import numpy as np
 import pandas as pd
+import warnings
 
 #####################################################################
 #                   MeasurementStation Class
@@ -76,6 +77,10 @@ class MeasurementStation:
         self.longitude = float(station_dict['lon'])
         self.startdate = datetime.strptime(station_dict['start_date'], "%Y-%m-%d")
         self.enddate = (datetime.strptime(station_dict['end_date'], "%Y-%m-%d") if station_dict['end_date'] != "None" else None)
+        if len(station_dict['bad_data']) > 0.:
+            self.bad_data = [[datetime.strptime(x, '%Y-%m-%d') for x in y.split(':')] for y in station_dict['bad_data'].split(',')]
+        else:
+            self.bad_data = []
         self.notes = station_dict['notes']
 
 
@@ -221,6 +226,31 @@ def list_all_measurement_stations(json_dir, return_nums=False):
         return all_st, all_cl
     else:
         return all_st
+
+
+def return_all_measurement_stations(json_dir):
+    """Returns a list of the GIC measurement stations available.
+
+    Parameters:
+    -----------
+    json_dir :: str
+        Directory containing json files for all stations with measurements.
+
+    Returns:
+    --------
+    MStations :: dict
+        All available MeasurementStation objects in one dictionary.
+    """
+
+    files = os.listdir(json_dir)
+    json_files = [x for x in files if '.json' in x]
+    json_files.sort()
+
+    MStations = {}
+    for json_file in json_files:
+        MStations[json_file.strip(".json").split('-')[1]] = MeasurementStation(os.path.join(json_dir,json_file))
+
+    return MStations
 
 
 def plot_gic_measurements(gic_mea, station_path, plotdir='', ylim=0.58, verbose=False):
@@ -443,11 +473,37 @@ def write_gic_minute_data(trange, data_path, save_path="mindata", st_json_dir="s
 
                 if len(gic_data) != 0.:
                     try:
-                        df[code] = gic_data['dc']
-                        df['time'] = gic_data['time']
-                    except:
+                        # Pack into DataFrame for easy resample:
+                        df_resample = pd.DataFrame(gic_data)
+                        # Fill missing timesteps with nans:
+                        df_resample = df_resample.set_index('time').resample('1S').sum().replace(0.00, np.nan)
+                        # Check there are no missing timesteps at start:
+                        if len(df_resample) < 86400:
+                            start_points_missing = int((df_resample.index[0] - day).total_seconds())
+                            if start_points_missing > 0.:
+                                if verbose:
+                                    print(" - Missing data (n={}) at start of file. Filling with NaNs...".format(start_points_missing))
+                                n_points = range(0, start_points_missing)
+                                t_missing = [day + timedelta(seconds=x) for x in n_points]
+                                df_missing = pd.DataFrame({'temp': [np.nan for x in n_points],
+                                                           'dc':   [np.nan for x in n_points]}, index=t_missing)
+                                df_resample = pd.concat([df_missing, df_resample])
+                            # ...and no missing timesteps at end:
+                            end_points_missing = int(((day+timedelta(days=1)) - df_resample.index[-1]).total_seconds() - 1)
+                            if end_points_missing > 0:
+                                if verbose:
+                                    print(" - Missing data (n={}) at end of file. Filling with NaNs...".format(end_points_missing))
+                                n_points = range(86400-end_points_missing, 86400)
+                                t_missing = [day + timedelta(seconds=x) for x in n_points]
+                                df_missing = pd.DataFrame({'temp': [np.nan for x in n_points],
+                                                           'dc':   [np.nan for x in n_points]}, index=t_missing)
+                                df_resample = pd.concat([df_resample, df_missing])
+                        # Pack into final DataFrame:
+                        df[code] = df_resample['dc'].astype(float)
+                        df['time'] = df_resample.index
+                    except Exception as e:
                         if verbose:
-                            print("Problem writing day {} for {}. Probably missing data.".format(dayf, code))
+                            print(" - ERROR: Problem writing day {} for {}. Exited with error: {}.".format(dayf, code, e))
                         st_codes.remove(code)
                         st_nums.remove(num)
 
@@ -455,7 +511,9 @@ def write_gic_minute_data(trange, data_path, save_path="mindata", st_json_dir="s
             df = df.set_index('time')
             # Note that this is centered to avoid an offset of 30s wrt measurements:
             df.index = df.index + pd.Timedelta(30, unit='s')
-            df_min = df.iloc[:-30].resample('1min').median()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning) # suppress nan-only warnings
+                df_min = df.iloc[:-30].resample('1min').median()
 
             # Save to CSV:
             df_min.to_csv(os.path.join(save_path, "GICMEAS_{}.csv".format(dayf)))
