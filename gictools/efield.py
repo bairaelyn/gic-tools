@@ -68,18 +68,18 @@ def calc_E_using_plane_wave_method(mag_x, mag_y, resistivities, thicknesses, dt=
     mag_y_fft = np.fft.rfft(mag_y, n=N)
 
     # Multiply each frequency component by the transfer function:
-    Ex_fft = Z_interp[0, :]*mag_x_fft + Z_interp[1, :]*mag_y_fft
-    Ey_fft = Z_interp[2, :]*mag_x_fft + Z_interp[3, :]*mag_y_fft
+    En_fft = Z_interp[0, :]*mag_x_fft + Z_interp[1, :]*mag_y_fft
+    Ee_fft = Z_interp[2, :]*mag_x_fft + Z_interp[3, :]*mag_y_fft
 
     # Inverse Fourier transform:
-    Ex_t = np.real(np.fft.irfft(Ex_fft)[:N0])
-    Ey_t = np.real(np.fft.irfft(Ey_fft)[:N0])
+    En_t = np.real(np.fft.irfft(En_fft)[:N0])
+    Ee_t = np.real(np.fft.irfft(Ee_fft)[:N0])
 
     # Remove buffers around edges:
-    Ex_t = Ex_t[buffer_len:-buffer_len]
-    Ey_t = Ey_t[buffer_len:-buffer_len]
+    En_t = En_t[buffer_len:-buffer_len]
+    Ee_t = Ee_t[buffer_len:-buffer_len]
 
-    return Ex_t, Ey_t
+    return En_t, Ee_t
 
 
 def _calc_Z(freqs, resistivities, thicknesses):
@@ -133,8 +133,31 @@ def _calc_Z(freqs, resistivities, thicknesses):
     return Z_output
 
 
+def make_test_efield(Grid, en_val, ee_val, condmodel='39'):
+    '''Return a geoelectric field for testing in the same format as calc_E functions.
+
+    Parameters:
+    -----------
+    Grid :: gictools.grid.PowerGrid object
+        Contains the grid spacing details.
+    en_val, ee_val :: floats
+        Single values for geoelectric field northward/eastward components in mV.
+    condmodel :: str (default='39')
+        Model to use for the dictionary.
+
+    Returns:
+    --------
+    En, Ee :: dicts[condmodel] = np.zeros((1, x_ncells, y_ncells))
+        Geoelectric field arrays accessible by dict key condmodel.
+    '''
+    En, Ee = {}, {}
+    En[condmodel] = np.zeros((1, Grid.x_ncells, Grid.y_ncells)) + float(en_val)
+    Ee[condmodel] = np.zeros((1, Grid.x_ncells, Grid.y_ncells)) + float(ee_val)
+    return (En, Ee)
+
+
 def prepare_B_for_E_calc(mag_x_raw, mag_y_raw, mag_time, return_time=False, timestep='min'):
-    """Takes x and y variations in the geomagnetic field and prepares the
+    '''Takes x and y variations in the geomagnetic field and prepares the
     arrays for use in the plane wave calculation of E. This includes
     subtracting the mean, interpolating to regular timesteps and removing
     any nan (using linear interpolation).
@@ -156,7 +179,7 @@ def prepare_B_for_E_calc(mag_x_raw, mag_y_raw, mag_time, return_time=False, time
         New, regular geomagnetic field measurements.
     (mag_x_raw, mag_y_raw, time) if return_time==True ::
         time is returned in numerical matplotlib.dates date2num format.
-    """
+    '''
 
     assert timestep in ['min', 'sec'], "'timestep' must be either 'min' or 'sec'!"
 

@@ -7,6 +7,7 @@ import unittest
 
 import gictools.meas
 import gictools.efield
+import gictools.grid
 
 class TestGICTOOLS(unittest.TestCase):
 
@@ -31,6 +32,17 @@ class TestGICTOOLS(unittest.TestCase):
 
         # Compute geoelectric field:
         Ex_t, Ey_t = gictools.efield.calc_E_using_plane_wave_method(mag_x, mag_y, resistivities, thicknesses)
+        return
+
+    def test_grid(self):
+        # Read in Horton grid model model:
+        config = configparser.ConfigParser()
+        config.read('examples/config_example.ini')
+        PowerGrid = gictools.grid.PowerGrid()
+        PowerGrid.load_Grid(config)
+
+        print(PowerGrid)
+
         return
 
 if __name__ == '__main__':
