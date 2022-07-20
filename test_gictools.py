@@ -32,18 +32,20 @@ class TestGICTOOLS(unittest.TestCase):
 
         # Compute geoelectric field:
         Ex_t, Ey_t = gictools.efield.calc_E_using_plane_wave_method(mag_x, mag_y, resistivities, thicknesses)
-        return
 
-    def test_grid(self):
+    def test_calc_gic(self):
         # Read in Horton grid model model:
         config = configparser.ConfigParser()
         config.read('examples/config_example.ini')
         PowerGrid = gictools.grid.PowerGrid()
         PowerGrid.load_Grid(config)
 
-        print(PowerGrid)
+        # Make a test geoelectric field (1 V/km, 0 V/km)
+        En, Ee = gictools.efield.make_test_efield(PowerGrid, 1000, 0)
 
-        return
+        # Run GIC calculation
+        results = PowerGrid.calc_gic_in_grid(En, Ee)
+        gic_trans = PowerGrid.calc_gic_in_transformers(results)
 
 if __name__ == '__main__':
     unittest.main()

@@ -162,6 +162,10 @@ def prepare_B_for_E_calc(mag_x_raw, mag_y_raw, mag_time, return_time=False, time
     subtracting the mean, interpolating to regular timesteps and removing
     any nan (using linear interpolation).
 
+    NOTE: If there are missing/double data points, the new X/Y arrays can
+    have different lengths than the original time series. Use return_time
+    and take the equally spaced times if this is the case.
+
     Parameters:
     -----------
     mag_x_raw, mag_y_raw :: np.arrays
@@ -182,6 +186,8 @@ def prepare_B_for_E_calc(mag_x_raw, mag_y_raw, mag_time, return_time=False, time
     '''
 
     assert timestep in ['min', 'sec'], "'timestep' must be either 'min' or 'sec'!"
+    mag_x_raw = np.array(mag_x_raw)
+    mag_y_raw = np.array(mag_y_raw)
 
     # Remove nans and linearly interpolate over them:
     try:

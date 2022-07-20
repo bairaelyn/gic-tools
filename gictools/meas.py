@@ -44,6 +44,8 @@ class MeasurementStation:
             Latitude and longitude of the station.
         startdate, enddate :: datetime.datetime objects
             Startdate of measurements and enddate (if applicable).
+        bad_data :: str
+            List of ranges containing bad/contaminated measurements.
         notes :: str
             Anything worth noting about the station.
 
@@ -77,6 +79,7 @@ class MeasurementStation:
         self.longitude = float(station_dict['lon'])
         self.startdate = datetime.strptime(station_dict['start_date'], "%Y-%m-%d")
         self.enddate = (datetime.strptime(station_dict['end_date'], "%Y-%m-%d") if station_dict['end_date'] != "None" else None)
+        self.gic_coeffs = [float(station_dict['gic_coefficient_a']), float(station_dict['gic_coefficient_b'])]
         if len(station_dict['bad_data']) > 0.:
             self.bad_data = [[datetime.strptime(x, '%Y-%m-%d') for x in y.split(':')] for y in station_dict['bad_data'].split(',')]
         else:
@@ -99,6 +102,11 @@ class MeasurementStation:
         printstr += ("----------------------------------------------------------------------\n")
 
         return printstr
+
+
+    def calc_gic(self, En, Ee):
+
+        return self.gic_coeffs[0]*En + self.gic_coeffs[1]*Ee
 
 
     def has_data_on(self, testdate):
