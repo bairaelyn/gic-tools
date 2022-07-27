@@ -156,7 +156,7 @@ def make_test_efield(Grid, en_val, ee_val, condmodel='39'):
     return (En, Ee)
 
 
-def prepare_B_for_E_calc(mag_x_raw, mag_y_raw, mag_time, return_time=False, timestep='min'):
+def prepare_B_for_E_calc(mag_x_raw, mag_y_raw, mag_time, subtract_means=True, return_time=False, timestep='min'):
     '''Takes x and y variations in the geomagnetic field and prepares the
     arrays for use in the plane wave calculation of E. This includes
     subtracting the mean, interpolating to regular timesteps and removing
@@ -202,7 +202,8 @@ def prepare_B_for_E_calc(mag_x_raw, mag_y_raw, mag_time, return_time=False, time
         pass
 
     # Subtract the mean
-    mag_x_raw, mag_y_raw = mag_x_raw - np.mean(mag_x_raw), mag_y_raw - np.mean(mag_y_raw)
+    if subtract_means:
+        mag_x_raw, mag_y_raw = mag_x_raw - np.mean(mag_x_raw), mag_y_raw - np.mean(mag_y_raw)
 
     # Interpolate so that every point in time is covered:
     mag_start = num2date(mag_time[0]).replace(tzinfo=None)

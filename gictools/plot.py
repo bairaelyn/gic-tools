@@ -98,7 +98,7 @@ def plot_map_with_gics(gic, nodes, latlons, line_voltages, En_val=0, Ee_val=0):
     plt.show()
 
 
-def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30.):
+def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30., savepath=''):
     '''Plots the geomagnetic field variations (H) and the modelled geoelectric field
     in both components.
 
@@ -122,6 +122,7 @@ def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30.):
     '''
 
     sns.set_style("whitegrid")
+    lw = 0.75
     today = datetime.strftime(mdates.num2date(t[-1]), "%d.%m.%Y")
 
     fig, axes = plt.subplots(2, 1, figsize=(10,6))
@@ -135,17 +136,17 @@ def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30.):
             ax.axvspan(t[ix]-0.5*l_min, t[ix]+0.5*l_min, fc='gold',
                        alpha=np.min((x,max_dbdt))/max_dbdt)
     axes[0].axvspan(t[ix]+2, t[ix]+2, fc='gold', alpha=0.5, label="Geomagnetic activity")
-    axes[0].plot_date(t, H, '-', lw=1, label="Horizontal B-field (measured)")
-    axes[1].plot_date(t, En, '-', lw=1, c=c_En, label="Northward E-field (modelled)")
-    axes[1].plot_date(t, Ee, '-', lw=1, c=c_Ee, label="Eastward E-field (modelled)")
+    axes[0].plot_date(t, H, '-', lw=lw, label="Horizontal B-field (measured)")
+    axes[1].plot_date(t, En, '-', lw=lw, c=c_En, label="Northward E-field (modelled)")
+    axes[1].plot_date(t, Ee, '-', lw=lw, c=c_Ee, label="Eastward E-field (modelled)")
 
     for ax in axes:
         ax.grid(color='lightgrey', alpha=0.5)
-        locator = mdates.AutoDateLocator(minticks=8, maxticks=13)
+        locator = mdates.AutoDateLocator(minticks=8, maxticks=14)
         formatter = mdates.ConciseDateFormatter(locator)
         ax.xaxis.set_major_locator(locator)
         ax.xaxis.set_major_formatter(formatter)
-        ax.set_xlim([t[0], t[-1]])
+        ax.set_xlim([t[-1]-3, t[-1]])
 
         # Add legend
         ax.legend(loc='lower right')
@@ -154,18 +155,20 @@ def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30.):
     axes[1].axhline(y=0., color='darkgrey', ls='--', lw=0.75)
 
     # Set axis limits
-    if (np.max(H) - np.min(H)) < 50:
-        axes[0].set_ylim([np.median(H)-30, np.median(H)+30])
     e_ylim = np.max( [np.max(np.abs(En)), np.max(np.abs(Ee))] )*1.1
     axes[1].set_ylim((-e_ylim, e_ylim))
     axes[1].set_xlabel("Time [UTC]")
     axes[0].set_ylabel("H [nT]")
     axes[1].set_ylabel("E [mV/km]")
     axes[0].set_title("Past 24 hours ({}) of geomagnetic field (H) and geoelectric field (E) in Austria".format(today))
-    plt.show()
+
+    if savepath != '':
+        plt.savefig(savepath)
+    else:
+        plt.show()
 
 
-def plot_gic_time_series(t, gics):
+def plot_gic_time_series(t, gics, savepath=''):
     '''Plots the geomagnetic field variations (H) and the modelled geoelectric field
     in both components.
 
@@ -182,7 +185,8 @@ def plot_gic_time_series(t, gics):
     None
     '''
 
-    #sns.set_style("whitegrid")
+    sns.set_style("whitegrid")
+    lw=0.75
     today = datetime.strftime(mdates.num2date(t[-1]), "%d.%m.%Y")
 
     fig, axes = plt.subplots(len(gics), 1, figsize=(10,6))
@@ -191,37 +195,45 @@ def plot_gic_time_series(t, gics):
         axes[i].plot_date(t, np.abs(gics[node]), '-', lw=1, label="Estimated GICs at {}".format(node))
 
         # Line over zero:
-        axes[i].axhline(y=5., color='gold', ls='--', lw=0.75)
-        axes[i].axhline(y=10., color='orange', ls='--', lw=0.75)
-        axes[i].axhline(y=20., color='red', ls='--', lw=0.75)
+        axes[i].axhline(y=5., color='gold', ls='--', lw=lw)
+        axes[i].axhline(y=10., color='orange', ls='--', lw=lw)
+        axes[i].axhline(y=20., color='red', ls='--', lw=lw)
 
         # Limits
         axes[i].set_ylim( [0, np.max( [21., np.max(np.abs(gics[node]))*1.1])] )
         axes[i].set_ylabel("DC [A]")
 
+        # Add textbox with max past values
+        textstr = "Max GIC in past 72h: {:.2f} A\n".format(np.max(np.abs(gics[node][-1440*3:])))
+        textstr += "Max GIC in past 24h: {:.2f} A\n".format(np.max(np.abs(gics[node][-1440:])))
+        textstr += "Max GIC in past 2h: {:.2f} A".format(np.max(np.abs(gics[node][-120:])))
+        props = dict(boxstyle='round', facecolor='gold', alpha=0.2)
+        axes[i].text(0.02, 0.9, textstr, transform=axes[i].transAxes, fontsize=12,
+                verticalalignment='top', bbox=props)
+
+        axes[i].set_title("Past 72 hours ({}) of GICs at the {} transformer in Austria".format(today, node))
+
     for ax in axes:
         ax.grid(color='lightgrey', alpha=0.5)
-        locator = mdates.AutoDateLocator(minticks=8, maxticks=13)
+        locator = mdates.AutoDateLocator(minticks=8, maxticks=14)
         formatter = mdates.ConciseDateFormatter(locator)
         ax.xaxis.set_major_locator(locator)
         ax.xaxis.set_major_formatter(formatter)
-        ax.set_xlim([t[0], t[-1]])
+        ax.set_xlim([t[-1]-3, t[-1]])
 
         # Add legend
         ax.legend(loc='upper right')
 
-        # Add textbox with max past values
-        textstr = "Max GIC in past 72h: {:.2f} A\n".format(np.max(np.abs(gics[node][-1440:]))) # *3
-        textstr += "Max GIC in past 24h: {:.2f} A\n".format(np.max(np.abs(gics[node][-1440:])))
-        textstr += "Max GIC in past 2h: {:.2f} A".format(np.max(np.abs(gics[node][-120:])))
-        props = dict(boxstyle='round', facecolor='gold', alpha=0.2)
-        ax.text(0.02, 0.9, textstr, transform=ax.transAxes, fontsize=12,
-                verticalalignment='top', bbox=props)
-
     # Set title
-    axes[0].set_title("Past 24 hours ({}) of GICs at {} transformers in Austria".format(today, len(gics)))
     axes[-1].set_xlabel("Time [UTC]")
-    plt.show()
+
+    # Adjust spacing:
+    plt.subplots_adjust(hspace=0.28)
+
+    if savepath != '':
+        plt.savefig(savepath)
+    else:
+        plt.show()
 
 
 def plot_gic_bars(gic, stations, voltages, En_val=0, Ee_val=0):
