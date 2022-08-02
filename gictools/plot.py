@@ -19,13 +19,20 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
-import seaborn as sns
-
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
 import matplotlib.gridspec as gridspec
 from matplotlib.dates import DateFormatter
-import cartopy.io.img_tiles as cimgt
+
+try:
+    import seaborn as sns
+except:
+    print("No seaborn support.")
+
+try:
+    import cartopy.crs as ccrs
+    import cartopy.feature as cfeature
+    import cartopy.io.img_tiles as cimgt
+except:
+    print("No cartopy support.")
 
 c_En = "#e69f00"
 c_Ee = "#56b3e9"
