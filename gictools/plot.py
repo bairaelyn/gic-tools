@@ -105,7 +105,7 @@ def plot_map_with_gics(gic, nodes, latlons, line_voltages, En_val=0, Ee_val=0):
     plt.show()
 
 
-def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30., savepath=''):
+def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30., past_days=3, savepath=''):
     '''Plots the geomagnetic field variations (H) and the modelled geoelectric field
     in both components.
 
@@ -122,6 +122,10 @@ def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30., savepath=''):
     max_dbdt :: float (default=30)
         Value at which geomag. activity is saturated. Values above this will have the
         same colour.
+    past_days :: int (default=3)
+        Number of past days to include in plot (t[-1] - past_days)
+    savepath :: str (default='')
+        Leaving savepath empty will show the plot. Setting a filename will save to that.
 
     Returns:
     --------
@@ -153,7 +157,7 @@ def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30., savepath=''):
         formatter = mdates.ConciseDateFormatter(locator)
         ax.xaxis.set_major_locator(locator)
         ax.xaxis.set_major_formatter(formatter)
-        ax.set_xlim([t[-1]-3, t[-1]])
+        ax.set_xlim([t[-1]-past_days, t[-1]])
 
         # Add legend
         ax.legend(loc='lower right')
@@ -175,7 +179,7 @@ def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30., savepath=''):
         plt.show()
 
 
-def plot_gic_time_series(t, gics, savepath=''):
+def plot_gic_time_series(t, gics, past_days=3, savepath=''):
     '''Plots the geomagnetic field variations (H) and the modelled geoelectric field
     in both components.
 
@@ -186,6 +190,10 @@ def plot_gic_time_series(t, gics, savepath=''):
     gics :: Dict of np.arrays, variable length
         Arrays containing GIC values for any number of nodes. Figure will be expanded
         to fit. The keys list the station names.
+    past_days :: int (default=3)
+        Number of past days to include in plot (t[-1] - past_days)
+    savepath :: str (default='')
+        Leaving savepath empty will show the plot. Setting a filename will save to that.
 
     Returns:
     --------
@@ -226,7 +234,7 @@ def plot_gic_time_series(t, gics, savepath=''):
         formatter = mdates.ConciseDateFormatter(locator)
         ax.xaxis.set_major_locator(locator)
         ax.xaxis.set_major_formatter(formatter)
-        ax.set_xlim([t[-1]-3, t[-1]])
+        ax.set_xlim([t[-1]-past_days, t[-1]])
 
         # Add legend
         ax.legend(loc='upper right')

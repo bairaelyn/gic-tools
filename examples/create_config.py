@@ -17,6 +17,9 @@ config['DEFAULT'] =            {'CodePath': '/path/to/code'}
 config['Measurements'] =       {'StationDataPath': '/path/to/json/files',
                                 'DataArchivePath': '/path/to/archive'}
 
+# Parameters for real-time computations
+config['RealTimeGIC'] =        {'DailyDataPath': '/path/to/dailyfiles'}
+
 # Conductivity model used for modelling
 config['ConductivityModel'] =  {'ModelNumber'  : '39',
                                 'Source'       : 'EURHOM',
