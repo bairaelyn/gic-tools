@@ -34,9 +34,14 @@ try:
 except:
     print("No cartopy support.")
 
-c_En = "#e69f00"
-c_Ee = "#56b3e9"
+c_En = "green" #"#e69f00"
+c_Ee = "purple" #"#56b3e9"
 l_min = 1. / (24.*60.) # minute as a fraction of day
+
+
+# =======================================================================================
+# ------------------------------- PLOTTING FUNCTIONS ------------------------------------
+# =======================================================================================
 
 def plot_map_with_gics(gic, nodes, latlons, line_voltages, En_val=0, Ee_val=0):
     '''Plots a map with circles depicting the GICs at each location in Austria.
@@ -105,7 +110,7 @@ def plot_map_with_gics(gic, nodes, latlons, line_voltages, En_val=0, Ee_val=0):
     plt.show()
 
 
-def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30., past_days=3, savepath=''):
+def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30., max_elim=210., past_days=3, savepath=''):
     '''Plots the geomagnetic field variations (H) and the modelled geoelectric field
     in both components.
 
@@ -148,8 +153,8 @@ def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30., past_days=3, s
                        alpha=np.min((x,max_dbdt))/max_dbdt)
     axes[0].axvspan(t[ix]+2, t[ix]+2, fc='gold', alpha=0.5, label="Geomagnetic activity")
     axes[0].plot_date(t, H, '-', lw=lw, label="Horizontal B-field (measured)")
-    axes[1].plot_date(t, En, '-', lw=lw, c=c_En, label="Northward E-field (modelled)")
-    axes[1].plot_date(t, Ee, '-', lw=lw, c=c_Ee, label="Eastward E-field (modelled)")
+    axes[1].plot_date(t, np.abs(En), '-', lw=lw, c=c_En, label="Northward E-field (modelled)")
+    axes[1].plot_date(t, np.abs(Ee), '-', lw=lw, c=c_Ee, label="Eastward E-field (modelled)")
 
     for ax in axes:
         ax.grid(color='lightgrey', alpha=0.5)
@@ -160,23 +165,35 @@ def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30., past_days=3, s
         ax.set_xlim([t[-1]-past_days, t[-1]])
 
         # Add legend
-        ax.legend(loc='lower right')
+        ax.legend(loc='upper left')
 
     # Line over zero for E-fields/GIC:
-    axes[1].axhline(y=0., color='darkgrey', ls='--', lw=0.75)
+    axes[1].axhline(y=0., color='darkgrey', ls='--', lw=lw)
+
+    # Line over zero:
+    for level, c_level in zip([100., 200., 400.], ['gold', 'orange', 'red']):
+        axes[1].axhline(y=level, color=c_level, ls='--', lw=lw)
 
     # Set axis limits
     e_ylim = np.max( [np.max(np.abs(En)), np.max(np.abs(Ee))] )*1.1
-    axes[1].set_ylim((-e_ylim, e_ylim))
+    axes[1].set_ylim( [0, np.max( [max_elim, e_ylim*1.1])] )
     axes[1].set_xlabel("Time [UTC]")
     axes[0].set_ylabel("H [nT]")
     axes[1].set_ylabel("E [mV/km]")
     axes[0].set_title("Past 24 hours ({}) of geomagnetic field (H) and geoelectric field (E) in Austria".format(today))
 
+    # Adjust spacing:
+    plt.subplots_adjust(hspace=0.28)
+    plt.tight_layout()
+
+    # Add run time:
+    _add_run_time_text()
+
     if savepath != '':
         plt.savefig(savepath)
     else:
         plt.show()
+    plt.clf()
 
 
 def plot_gic_time_series(t, gics, past_days=3, savepath=''):
@@ -237,18 +254,23 @@ def plot_gic_time_series(t, gics, past_days=3, savepath=''):
         ax.set_xlim([t[-1]-past_days, t[-1]])
 
         # Add legend
-        ax.legend(loc='upper right')
+        #ax.legend(loc='upper right')
 
     # Set title
     axes[-1].set_xlabel("Time [UTC]")
 
     # Adjust spacing:
     plt.subplots_adjust(hspace=0.28)
+    plt.tight_layout()
+
+    # Add run time:
+    _add_run_time_text()
 
     if savepath != '':
         plt.savefig(savepath)
     else:
         plt.show()
+    plt.clf()
 
 
 def plot_gic_bars(gic, stations, voltages, En_val=0, Ee_val=0):
@@ -296,3 +318,12 @@ def plot_gic_bars(gic, stations, voltages, En_val=0, Ee_val=0):
     plt.savefig("bar_gic_Ex{:04d}_Ey{:04d}.png".format(int(En_val), int(Ee_val)), dpi=200, bbox_inches='tight')
     plt.show()
     plt.close()
+
+
+# =======================================================================================
+# ------------------------------ FORMATTING FUNCTIONS -----------------------------------
+# =======================================================================================
+
+def _add_run_time_text():
+    now = datetime.utcnow()
+    plt.figtext(0.01,0.020,'Plot created {} UTC.'.format(now.strftime("%d %B %Y, %H:%S")), fontsize=10, ha='left')

@@ -11,7 +11,8 @@ import configparser
 config = configparser.ConfigParser()
 
 # Path to where gic-tools code is stored
-config['DEFAULT'] =            {'CodePath': '/path/to/code'}
+config['DEFAULT'] =            {'Location': 'Server',
+                                'CodePath': '/path/to/code'}
 
 # Path to measurement data and station .json files
 config['Measurements'] =       {'StationDataPath': '/path/to/json/files',
@@ -19,7 +20,10 @@ config['Measurements'] =       {'StationDataPath': '/path/to/json/files',
 
 # Parameters for real-time computations
 config['RealTimeGIC'] =        {'DailyDataPath': '/path/to/dailyfiles',
-                                'PlotPath':      '/path/to/plots'}
+                                # Where to save plots to:
+                                'PlotPath':      '/path/to/plots',
+                                # Where to copy plots to:
+                                'PlotArchive':   '/srv/products/graphs/gic/'}
 
 # Conductivity model used for modelling
 config['ConductivityModel'] =  {'ModelNumber'  : '39',
