@@ -273,6 +273,97 @@ def plot_gic_time_series(t, gics, past_days=3, savepath=''):
     plt.clf()
 
 
+def plot_gic_time_series_zoom(t, gics, station='station', past_days=3, savepath=''):
+    '''Plots the geomagnetic field variations (H) and the modelled geoelectric field
+    in both components.
+
+    Parameters:
+    -----------
+    t :: np.array
+        Array of timesteps for use in plot_date.
+    gics :: Dict of np.arrays, variable length
+        Arrays containing GIC values for any number of nodes. Figure will be expanded
+        to fit. The keys list the station names.
+    station :: str (default='station')
+        String with name of power station used for plotting.
+    past_days :: int (default=3)
+        Number of past days to include in plot (t[-1] - past_days)
+    savepath :: str (default='')
+        Leaving savepath empty will show the plot. Setting a filename will save to that.
+
+    Returns:
+    --------
+    None
+    '''
+
+    sns.set_style("whitegrid")
+    lw=0.75
+    now = datetime.utcnow()
+    today = datetime.strftime(mdates.num2date(t[-1]), "%d.%m.%Y")
+    plot_past_days = [1, 7] # [7, 3, 1] #
+    skip = 5
+
+    fig, axes = plt.subplots(len(plot_past_days), 1, figsize=(10,6))
+
+    for i, ndays in enumerate(plot_past_days):
+        axes[i].plot_date(t[t > t[-1]-ndays], np.abs(gics[t > t[-1]-ndays]), '-', lw=1, label="Estimated GICs at TRANS")
+
+        # Line over zero:
+        axes[i].axhline(y=5., color='gold', ls='--', lw=lw)
+        axes[i].axhline(y=10., color='orange', ls='--', lw=lw)
+        axes[i].axhline(y=20., color='red', ls='--', lw=lw)
+
+        # Limits
+        ylim = np.max( [21., np.max(np.abs(gics))*1.1])
+        axes[i].set_ylim( [0, ylim] )
+        axes[i].set_ylabel("DC [A]")
+
+        axes[i].grid(color='lightgrey', alpha=0.5)
+        locator = mdates.AutoDateLocator(minticks=8, maxticks=14)
+        formatter = mdates.ConciseDateFormatter(locator)
+        axes[i].xaxis.set_major_locator(locator)
+        axes[i].xaxis.set_major_formatter(formatter)
+        axes[i].set_xlim([t[-1]-ndays, t[-1]])
+
+    # Add textbox with max past values
+    textstr = "Max GIC in past 24h: {:.2f} A\n".format(np.max(np.abs(gics[-1440:])))
+    textstr += "Max GIC in past 2h: {:.2f} A".format(np.max(np.abs(gics[-120:])))
+    props = dict(boxstyle='round', facecolor='gold', alpha=0.2)
+    axes[0].text(0.02, 0.9, textstr, transform=axes[0].transAxes, fontsize=12,
+                 verticalalignment='top', bbox=props)
+
+    textstr = "Max GIC in past 7 days: {:.2f} A\n".format(np.max(np.abs(gics[-1440*7:])))
+    textstr += "Max GIC in past 3 days: {:.2f} A".format(np.max(np.abs(gics[-1440*3:])))
+    props = dict(boxstyle='round', facecolor='gold', alpha=0.2)
+    axes[1].text(0.02, 0.9, textstr, transform=axes[1].transAxes, fontsize=12,
+                 verticalalignment='top', bbox=props)
+
+    zoom_effect(axes[0], axes[1], direction='out')
+
+    # Add axes for 'now' and midnight:
+    midnight = mdates.date2num(datetime(now.year, now.month, now.day))
+    axes[0].annotate('midnight', xy=(midnight,ylim*0.88), xytext=(midnight+0.007,ylim*0.88), color='k', fontsize=10)
+    axes[0].plot_date([midnight,midnight],[-10,1000],'--k', alpha=0.5, linewidth=0.5)
+
+    # Set title
+    axes[0].set_title("Past 24 hours ({}) of GICs at the {} transformer".format(today, station))
+    axes[1].set_title("Past 7 days ({}) of GICs at the {} transformer".format(today, station))
+    axes[-1].set_xlabel("Time [UTC]")
+
+    # Adjust spacing:
+    plt.subplots_adjust(hspace=0.01)
+    plt.tight_layout()
+
+    # Add run time:
+    _add_run_time_text()
+
+    if savepath != '':
+        plt.savefig(savepath)
+    else:
+        plt.show()
+    plt.clf()
+
+
 def plot_gic_bars(gic, stations, voltages, En_val=0, Ee_val=0):
     '''
 
@@ -326,4 +417,69 @@ def plot_gic_bars(gic, stations, voltages, En_val=0, Ee_val=0):
 
 def _add_run_time_text():
     now = datetime.utcnow()
-    plt.figtext(0.01,0.020,'Plot created {} UTC.'.format(now.strftime("%d %B %Y, %H:%S")), fontsize=10, ha='left')
+    plt.figtext(0.01,0.020,'Plot created {} UTC.'.format(now.strftime("%d %B %Y, %H:%M")), fontsize=10, ha='left')
+
+
+def zoom_effect(ax1, ax2, direction='in', **kwargs):
+    """
+    ax2 : the big main axes
+    ax1 : the zoomed axes
+    The xmin & xmax will be taken from the
+    ax1.viewLim.
+    """
+
+    from matplotlib.transforms import Bbox, TransformedBbox, blended_transform_factory
+
+    tt = ax1.transScale + (ax1.transLimits + ax2.transAxes)
+    trans = blended_transform_factory(ax2.transData, tt)
+
+    mybbox1 = ax1.bbox
+    mybbox2 = TransformedBbox(ax1.viewLim, trans)
+
+    prop_patches = kwargs.copy()
+    prop_patches["ec"] = "none"
+    prop_patches["alpha"] = 0.1
+
+    if direction == 'in':
+        loc1a, loc2a, loc1b, loc2b = 2, 3, 1, 4
+    elif direction == 'out':
+        loc1a, loc2a, loc1b, loc2b = 3, 2, 4, 1
+
+    c1, c2, bbox_patch1, bbox_patch2, p = \
+        _connect_bbox(mybbox1, mybbox2,
+                     loc1a=loc1a, loc2a=loc2a, loc1b=loc1b, loc2b=loc2b,
+                     prop_lines=kwargs, prop_patches=prop_patches)
+
+    if direction == 'in':
+        ax1.add_patch(bbox_patch1)
+    ax2.add_patch(bbox_patch2)
+    ax2.add_patch(c1)
+    ax2.add_patch(c2)
+    ax2.add_patch(p)
+
+    return c1, c2, bbox_patch1, bbox_patch2, p
+
+
+def _connect_bbox(bbox1, bbox2,
+                 loc1a, loc2a, loc1b, loc2b,
+                 prop_lines, prop_patches=None):
+
+    from mpl_toolkits.axes_grid1.inset_locator import BboxPatch, BboxConnector, BboxConnectorPatch
+    if prop_patches is None:
+        prop_patches = prop_lines.copy()
+        prop_patches["alpha"] = prop_patches.get("alpha", 1)*0.2
+
+    c1 = BboxConnector(bbox1, bbox2, loc1=loc1a, loc2=loc2a, color='k', lw=0.5, **prop_lines)
+    c1.set_clip_on(False)
+    c2 = BboxConnector(bbox1, bbox2, loc1=loc1b, loc2=loc2b, color='k', lw=0.5, **prop_lines)
+    c2.set_clip_on(False)
+
+    bbox_patch1 = BboxPatch(bbox1, **prop_patches)
+    bbox_patch2 = BboxPatch(bbox2, **prop_patches)
+
+    p = BboxConnectorPatch(bbox1, bbox2,
+                           loc1a=loc1a, loc2a=loc2a, loc1b=loc1b, loc2b=loc2b,
+                           **prop_patches)
+    p.set_clip_on(False)
+
+    return c1, c2, bbox_patch1, bbox_patch2, p
