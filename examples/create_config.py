@@ -20,6 +20,8 @@ config['Measurements'] =       {'StationDataPath': '/path/to/json/files',
 
 # Parameters for real-time computations
 config['RealTimeGIC'] =        {'DailyDataPath': '/path/to/dailyfiles',
+                                # Where magnetic field data comes from (web or db):
+                                'MagDataSource': 'web',
                                 # Where to save plots to:
                                 'PlotPath':      '/path/to/plots',
                                 # Where to copy plots to:

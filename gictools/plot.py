@@ -40,55 +40,186 @@ l_min = 1. / (24.*60.) # minute as a fraction of day
 
 
 # =======================================================================================
-# ------------------------------- PLOTTING FUNCTIONS ------------------------------------
+# --------------------------------- CREATING MAPS ---------------------------------------
 # =======================================================================================
 
-def plot_map_with_gics(gic, nodes, latlons, line_voltages, En_val=0, Ee_val=0):
-    '''Plots a map with circles depicting the GICs at each location in Austria.
+def create_map_of_austria(fig=None, figsize=(20,13), use_terrain=True, terrain_alpha=0.7):
+    '''Plots the geomagnetic field variations (H) and the modelled geoelectric field
+    in both components.
+    !! Requires cartopy !!
 
     Parameters:
     -----------
-    gic : pandas.DataFrame
-        A pandas DF containing the stations as columns and single GIC values.
-    nodes : [Grid.nodefrom, Grid.nodeto] arrays
-        Arrays describing how the grid nodes are connected.
-    latlons : [Grid.latitudes, Grid.longitudes] arrays
-        Arrays describing where the grid nodes are located.
-    line_voltages : ...
+    fig :: matplotlib.Figure object (default=None)
+        Define Figure object if desired.
+    figsize :: tuple (default=(20,13))
+        Standard tuple of WxH for matplotlib plot size.
+    use_terrain :: bool (default=True)
+        Determines whether or not to load terrain image.
+    terrain_alpha :: float (default=0.7)
+        Alpha value determining how much fade to apply to the terrain (if loaded).
+
+    Returns:
+    --------
+    ax
+
+    Example:
+    --------
+    >>> gic = np.random.uniform(low=-30, high=30, size=(len(PowerGrid.latitudes),))
+    >>> ax = gicplot.plot_map_with_gics(gic, PowerGrid, En_val=0, Ee_val=-30)
+    >>> plt.show()
     '''
 
-    fig = plt.figure(figsize=(20,13))
+    import cartopy.crs as ccrs
+    import cartopy.feature as cfeature
+    
+    if fig == None:
+        fig = plt.figure(figsize=figsize)
 
-    # Create plot object with edges:
+    # Define projection:
     proj = ccrs.TransverseMercator(13.4, approx=True)
     ax = fig.add_subplot(111, projection=proj)
-    ax1.set_extent([9, 17.5, 46, 49.3], crs=ccrs.PlateCarree())
+    ax.set_extent([9, 17.5, 46, 49.3], crs=ccrs.PlateCarree())
+    
+    # Load image tile for background:
+    if use_terrain:
+        import cartopy.io.img_tiles as cimgt
+        stamen_terrain = cimgt.Stamen('terrain-background')
+        ax.add_image(stamen_terrain, 8)
 
-    # Make image paler:
-    ax1.plot(13.5, 47.5, markersize=2000, marker='o', color='white', alpha=0.5, lw=0, transform=ccrs.Geodetic())
+        # Make image paler:
+        if terrain_alpha > 0.:
+            ax.plot(13.5, 47.5, markersize=2000, marker='o', color='white', zorder=1,
+                    alpha=terrain_alpha, lw=0, transform=ccrs.Geodetic())
 
     # Add borders:
-    ax1.add_feature(cfeature.BORDERS, zorder=10)
-    #ax1.gridlines(color='lightgrey', linestyle='-', draw_labels=True)
-    ax1.axis("off")
+    ax.add_feature(cfeature.BORDERS, zorder=3)
 
-    nfrom = nodes[0]
-    nto = nodes[1]
-    lats = latlons[0]
-    lons = latlons[1]
+    # Remove axis and add gridlines
+    ax.gridlines(color='lightgrey', linestyle='-', draw_labels=True, zorder=2)
+    ax.axis("off")
+    
+    return ax
+
+
+def add_network_to_map(ax, Grid, c_lines='slategray', ms=5):
+    '''Adds the full power network to a prepared map.
+
+    Parameters:
+    -----------
+    ax :: matplotlix.axis object
+        Plot containing map.
+    Grid :: gictools.grid.PowerGrid object
+        Object describing the grid.
+    c_lines :: str (default='slategrey')
+        Matplotlib colour for network lines.
+    ms :: float (default=5)
+        Markersize for network nodes (circles).
+
+    Returns:
+    --------
+    ax
+
+    Example:
+    --------
+    >>> ax = create_map_of_austria()
+    >>> ax = add_network_to_map(ax, Grid)
+    '''
+    
+    nfrom, nto = Grid.nodefrom, Grid.nodeto    
+    lats, lons = Grid.latitudes, Grid.longitudes
 
     # Plot connections between stations:
     for i in range(0,len(nfrom)):
-        plt.plot([lons[nfrom[i]], lons[nto[i]]], [lats[nfrom[i]], lats[nto[i]]],
-            color='lightgrey', linewidth=1, marker='o', markersize=5,
-            transform=ccrs.Geodetic())
+        ax.plot([lons[nfrom[i]], lons[nto[i]]], [lats[nfrom[i]], lats[nto[i]]],
+                color=c_lines, linewidth=1, marker='o', markersize=ms,
+                transform=ccrs.Geodetic(), zorder=4)
+    return ax
+
+
+def add_dc_meas_substations_to_map(ax, st_dict, c_st='red', c_text='black', fs=15, lat_off=-0.04, lon_off=0.11, no_text='4'):
+    '''Plots the geomagnetic field variations (H) and the modelled geoelectric field
+    in both components.
+
+    Parameters:
+    -----------
+    ax :: matplotlix.axis object
+        Plot containing map.
+    st_dict :: dict containing gictools.meas.MeasurementStation objects
+        Object describing the measurement stations.
+    c_st :: str (default='slategrey')
+        Matplotlib colour for station markers (circles).
+    c_text :: str (default='slategrey')
+        Matplotlib colour for station naming (by clientnum) text.
+    fs :: float (default=15)
+        Font size for station naming (by clientnum) text.
+    lat_off, lon_off :: float (default=-0.04, 0.11)
+        Offsets for the text inserts in the map
+    no_text :: str (default='4')
+        Define a station that shouldn't be labelled on the map (useful for doubles).
+
+    Returns:
+    --------
+    ax
+
+    Example:
+    --------
+    >>> ax = create_map_of_austria()
+    >>> all_stations, all_nums = gictools.meas.list_all_measurement_stations(station_path, return_nums=True)
+    >>> st_dict = {}
+    >>> for station, num in zip(all_stations, all_nums):
+            st_dict[station] = gictools.meas.MeasurementStation(os.path.join(
+                station_path,"{}-{}.json".format(num, station)))
+    >>> ax = add_dc_meas_substations_to_map(ax, st_dict)
+    '''
+
+    for st in st_dict.values():
+        if st.clientnum != no_text:
+            ax.plot(st.longitude, st.latitude, markersize=18, marker='o', color=c_st, zorder=10,
+                    fillstyle='none', lw=5, markeredgecolor='r', transform=ccrs.Geodetic())
+            ax.text(st.longitude+lon_off, st.latitude+lat_off, '#{:02d}'.format(int(st.clientnum)),
+                    fontsize=fs, transform=ccrs.Geodetic(), color=c_text, zorder=10)
+    return ax
+
+
+# =======================================================================================
+# ------------------------------- PLOTTING FUNCTIONS ------------------------------------
+# =======================================================================================
+
+def plot_map_with_gics(gic, Grid, En_val=0, Ee_val=0, figsize=(20,13), scaling=2):
+    '''Plots a map with circles depicting the GICs at each location.
+
+    Parameters:
+    -----------
+    gic :: pandas.DataFrame
+        A pandas DF containing the stations as columns and single GIC values.
+    PowerGrid :: gictools.grid.PowerGrid object
+        Object describing the grid.
+    En_val, Eeval :: floats (default=0)
+        Values for the geoelectric field to plot an arrow showing direction.
+    figsize :: tuple (default=(20,13))
+        Standard tuple of WxH for matplotlib plot size.
+    scaling :: float (default=2)
+        Scale the size of the GIC values to the map.
+
+    Returns:
+    --------
+    None
+    '''
+
+    # Create map object
+    fig = plt.figure(figsize=figsize)
+    ax = create_map_of_austria(fig=fig, use_terrain=False)
+
+    line_voltages = Grid.volt_lines
+
+    ax = add_network_to_map(ax, Grid, c_lines='lightgray')
 
     # Plot GICs as circles:
-    x, y = lons, lats
+    x, y = Grid.longitudes, Grid.latitudes
     gic_abs = np.abs(gic)
     gic_pos = np.maximum(gic, 0)
     gic_neg = np.minimum(gic, 0)
-    scaling = 0.5
     gic_pos, gic_neg = gic_pos*scaling, abs(gic_neg)*scaling
     coord_list = {}
 
@@ -103,11 +234,19 @@ def plot_map_with_gics(gic, nodes, latlons, line_voltages, En_val=0, Ee_val=0):
     for gx, gy, gp, gn, hvlv in zip(x, y, gic_pos, gic_neg, line_voltages):
         alpha = 0.25
         if (gx, gy) in coord_list:
-            ax1.plot(gx, gy, markersize=coord_list[(gx, gy)]*scaling, marker='o', color='darkred', alpha=alpha, lw=0, transform=ccrs.Geodetic())
+            ax.plot(gx, gy, markersize=coord_list[(gx, gy)]*scaling, marker='o', zorder=11,
+                    color='darkred', alpha=alpha, lw=0, transform=ccrs.Geodetic())
             coord_list.pop((gx, gy))
+            
+    # Plot arrow for geoelectric field direction:
+    E_tot = np.sqrt(En_val**2. + Ee_val**2.)
+    arrow_len = 0.3
+    x_pos, y_pos = 3.9-arrow_len*Ee_val/E_tot/2., 1.1-arrow_len*En_val/E_tot/2.
+    plt.arrow(x=x_pos, y=y_pos, dx=arrow_len*Ee_val/E_tot, dy=arrow_len*En_val/E_tot, 
+              width=0.05, head_length=0.2, fc='k', ec='k',
+              transform=fig.dpi_scale_trans)
 
-    #plt.savefig("map_gic_Ex{:04d}_Ey{:04d}.png".format(int(En_val), int(Ee_val)), dpi=200, bbox_inches='tight')
-    plt.show()
+    return ax
 
 
 def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30., max_elim=210., past_days=3, savepath=''):
@@ -180,7 +319,7 @@ def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30., max_elim=210.,
     axes[1].set_xlabel("Time [UTC]")
     axes[0].set_ylabel("H [nT]")
     axes[1].set_ylabel("E [mV/km]")
-    axes[0].set_title("Past 24 hours ({}) of geomagnetic field (H) and geoelectric field (E) in Austria".format(today))
+    axes[0].set_title("Past 7 days hours ({}) of geomagnetic field (H) and geoelectric field (E) in Austria".format(today))
 
     # Adjust spacing:
     plt.subplots_adjust(hspace=0.28)
