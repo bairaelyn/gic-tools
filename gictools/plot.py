@@ -357,7 +357,8 @@ def plot_gic_time_series(t, gics, past_days=3, savepath=''):
     None
     '''
 
-    sns.set_style("whitegrid")
+    try: sns.set_style("whitegrid")
+    except: pass
     lw=0.75
     today = datetime.strftime(mdates.num2date(t[-1]), "%d.%m.%Y")
 
@@ -436,7 +437,8 @@ def plot_gic_time_series_zoom(t, gics, station='station', past_days=3, savepath=
     None
     '''
 
-    sns.set_style("whitegrid")
+    try: sns.set_style("whitegrid")
+    except: pass
     lw=0.75
     now = datetime.utcnow()
     today = datetime.strftime(mdates.num2date(t[-1]), "%d.%m.%Y")
