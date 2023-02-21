@@ -307,6 +307,10 @@ def plot_gic_measurements(gic_mea, station_path, gic_mod=[], plotdir='', ylim=0.
     clients = [c for c in all_stations if c in clients]
     n_clients = len(clients)
 
+    t_mea_dn = np.array([mdates.datestr2num(x) for x in gic_mea['time'][::skip]])
+    if len(gic_mod) > 0:
+        t_mod_dn = np.array([x for x in gic_mod['time'][::skip]])
+
     fig, axes = plt.subplots(n_clients,1, figsize=(6,1*n_clients+0.5), sharex=True)
     if n_clients == 1:
         axes = [axes]
@@ -315,16 +319,18 @@ def plot_gic_measurements(gic_mea, station_path, gic_mod=[], plotdir='', ylim=0.
     print("Plotting data for {} days...".format(n_days))
     for icl, cl in enumerate(clients):
         # Plot:
-        axes[icl].plot_date(gic_mea['time'][::skip], gic_mea[cl][::skip], '-', c=gic_colours[all_stations.index(cl)], lw=1)
+        axes[icl].plot_date(t_mea_dn, gic_mea[cl][::skip], '-', c=gic_colours[all_stations.index(cl)], zorder=2, lw=1)
+        #axes[icl].plot_date(t_mea_dn, gic_mea[cl][::skip], '-', c='k', zorder=2, lw=1)
         y_pos = 0.75 + 0.25/n_clients
         if len(gic_mod) > 0:
-            axes[icl].plot_date(gic_mod['time'][::skip], gic_mod[cl][::skip], '-', c=gic_colours[all_stations.index(cl)], alpha=0.5, lw=1)
+            axes[icl].plot_date(t_mod_dn, gic_mod[cl][::skip], '-', c=gic_colours[all_stations.index(cl)], 
+                                zorder=0, alpha=0.3, lw=1)
         axes[icl].text(0.01, y_pos, "{}".format(cl), transform=axes[icl].transAxes, fontsize=12)
         axes[icl].set_ylabel("DC [A]")
 
         # Set axis limits:
-        max_val = np.max(np.abs(gic_mea[cl]))*1.1
-        if np.max(np.abs(gic_mea[cl])) > ylim:
+        max_val = np.max(np.abs(gic_mea[cl][::skip]))*1.1
+        if np.max(np.abs(gic_mea[cl][::skip])) > ylim:
             axes[icl].set_ylim(-max_val, max_val)
         else:
             axes[icl].set_ylim(-ylim, ylim)
@@ -335,21 +341,14 @@ def plot_gic_measurements(gic_mea, station_path, gic_mod=[], plotdir='', ylim=0.
     else:
         axes[0].set_title("GICs from {} till {}".format(daystr_start, daystr_end))
 
-    tick_space = int((len(gic_mea))/10)
-    custom_ticks = np.arange(0, len(gic_mea), tick_space)
-    timestamps = gic_mea['time'][::tick_space]
-    print(timestamps)
-
-    axes[-1].set_xticklabels(labels=timestamps, rotation=45)
-    axes[-1].set_xticks(custom_ticks/10)
-    axes[-1].set_xlim((gic_mea['time'].iloc[0], gic_mea['time'].iloc[-1]))
+    axes[-1].set_xlim((t_mea_dn[0], t_mea_dn[-1]))
     axes[-1].set_xlabel("Time (UTC)")
     plt.subplots_adjust(hspace=0)
 
-    #locator = mdates.AutoDateLocator(minticks=8, maxticks=14)
-    #formatter = mdates.ConciseDateFormatter(locator)
-    #axes[-1].xaxis.set_major_locator(locator)
-    #axes[-1].xaxis.set_major_formatter(formatter)
+    locator = mdates.AutoDateLocator(minticks=8, maxticks=14)
+    formatter = mdates.ConciseDateFormatter(locator)
+    axes[-1].xaxis.set_major_locator(locator)
+    axes[-1].xaxis.set_major_formatter(formatter)
 
     if len(plotdir) != 0:
         plotpath = os.path.join(plotdir,"GICs_{}.png".format(daystr))

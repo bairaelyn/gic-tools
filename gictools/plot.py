@@ -276,7 +276,8 @@ def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30., max_elim=210.,
     None
     '''
 
-    sns.set_style("whitegrid")
+    try: sns.set_style("whitegrid")
+    except: pass
     lw = 0.75
     today = datetime.strftime(mdates.num2date(t[-1]), "%d.%m.%Y")
 
