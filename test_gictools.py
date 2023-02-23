@@ -8,6 +8,7 @@ import unittest
 import gictools.meas
 import gictools.efield
 import gictools.grid
+import gictools.pred
 
 class TestGICTOOLS(unittest.TestCase):
 
@@ -46,6 +47,36 @@ class TestGICTOOLS(unittest.TestCase):
         # Run GIC calculation
         results = PowerGrid.calc_gic_in_grid(En, Ee)
         gic_trans = PowerGrid.calc_gic_in_transformers(results)
+
+    def test_pred(self):
+        # Read in example solar wind data:
+        df_SW_pred = pd.read_csv('examples/predstorm_example_sw.csv')
+        df_SW_pred['datetime'] = pd.to_datetime(df_SW_pred['datetime'])
+
+        # Output, input and offset values in minutes:
+        op_tr, ip_tr, os_tr = gictools.pred.op_tr, gictools.pred.ip_tr, gictools.pred.os_tr
+        run_model_every = 15 # minutes
+        n_sections_pred = int(len(df_SW_pred)/run_model_every)
+        i_SW_pred = np.arange(int(np.ceil((ip_tr+os_tr)/run_model_every)), n_sections_pred) * run_model_every
+
+        # Create SolarWindEncoder object:
+        SWEncoder = gictools.pred.SolarWindFeatureEncoder(gictools.pred.max_vals, gictools.pred.min_vals, encode_nodes=4)
+
+        # Get arrays of local time variables
+        sin_DOY_pred, cos_DOY_pred, sin_LT_pred, cos_LT_pred = gictools.pred.extract_local_time_variables(df_SW_pred['datetime'])
+
+        # Add to feature dataframe
+        # (x + 1) / 2 changes range from [-1,1] to [0,1]
+        df_SW_pred['sin_DOY'] = (sin_DOY_pred+1)/2
+        df_SW_pred['cos_DOY'] = (cos_DOY_pred+1)/2
+        df_SW_pred['sin_LT'] = (sin_LT_pred+1)/2
+        df_SW_pred['cos_LT'] = (cos_LT_pred+1)/2
+
+        # Extract features for LSTM algorithm
+        X_SW_pred_all, i_SW_pred = gictools.pred.extract_feature_samples(df_SW_pred, i_SW_pred, SWEncoder, 
+                                                                         op_tr, ip_tr, os_tr, use_rand_offset=False)
+
+
 
 if __name__ == '__main__':
     unittest.main()
