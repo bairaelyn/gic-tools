@@ -315,8 +315,8 @@ def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30., max_elim=210.,
         axes[1].axhline(y=level, color=c_level, ls='--', lw=lw)
 
     # Set axis limits
-    e_ylim = np.max( [np.max(np.abs(En)), np.max(np.abs(Ee))] )*1.1
-    axes[1].set_ylim( [0, np.max( [max_elim, e_ylim*1.1])] )
+    e_ylim = np.nanmax( [np.nanmax(np.abs(En)), np.nanmax(np.abs(Ee))] )*1.1
+    axes[1].set_ylim( [0, np.nanmax( [max_elim, e_ylim*1.1])] )
     axes[1].set_xlabel("Time [UTC]")
     axes[0].set_ylabel("H [nT]")
     axes[1].set_ylabel("E [mV/km]")
