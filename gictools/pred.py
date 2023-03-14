@@ -13,10 +13,16 @@ Last updated February 2023.
 --------------------------------------------------------------------
 """
 
+import os
 import calendar
-from datetime import datetime, timedelta
+import copy
+from datetime import datetime, timedelta, timezone
 from dateutil import tz
+import json
+from matplotlib.dates import num2date, date2num, DateFormatter
 import numpy as np
+import pandas as pd
+import urllib.request
 
 from keras.layers import Layer
 from tensorflow.keras import backend as K
@@ -31,6 +37,7 @@ min_vals = {'bz' : -50, 'by' : -50, 'btot': 0., 'speed': 250., 'density': 0.}
 
 # Standard output, input and offset # of minutes for LSTM:
 op_tr, ip_tr, os_tr = 40, 120, 10
+
 
 # #########################################################################
 #     ENCODER FOR FEATURE ENCODING                                        #
@@ -205,7 +212,6 @@ class TriangularValueEncoding(object):
 #     ATTENTION MECHANISM USED AS LSTM LAYER                              #
 # #########################################################################
 
-
 class BasicAttention(Layer):
     '''Basic Self-Attention Layer built using this resource:
     https://towardsdatascience.com/create-your-own-custom-attention-layer-understand-all-flavours-2201b5e8be9e
@@ -362,4 +368,169 @@ def min_max_loss(y_true, y_pred, loss_adjustment=0.1):
     adjustment = ((tf.reduce_max(y_true, axis=-1) - tf.reduce_min(y_true, axis=-1)) - 
                   (tf.reduce_max(y_pred, axis=-1) - tf.reduce_min(y_pred, axis=-1))) / N
     return error + 0.1*adjustment
+
+
+# *******************************************************************
+#               FUNCTIONS FOR LOADING SATELLITE DATA
+# *******************************************************************
+
+def get_noaa_realtime_data(interpolate_gaps=False):
+    """
+    Downloads and returns real-time solar wind data
+    7-day data downloaded from http://services.swpc.noaa.gov/products/solar-wind/
+
+    Parameters
+    ==========
+    interpolate_gaps :: bool, default=False
+        If True, will linearly interpolate the data to minute values.
+
+    Returns
+    =======
+    sw_data : pandas.DataFrame object
+        DF containing NOAA real-time solar wind data under standard keys.
+    """
+
+    # Data sources
+    url_plasma='http://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json'
+    url_mag='http://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json'
+
+    # Read plasma data:
+    with urllib.request.urlopen(url_plasma) as url:
+        dp = json.loads (url.read().decode())
+        dpn = [[np.nan if x == None else x for x in d] for d in dp]     # Replace None w NaN
+        dtype=[(x, 'float') for x in dp[0]]
+        dates = [date2num(datetime.strptime(x[0], "%Y-%m-%d %H:%M:%S.%f")) for x in dpn[1:]]
+        dp_ = [tuple([d]+[float(y) for y in x[1:]]) for d, x in zip(dates, dpn[1:])]
+        plasma = np.array(dp_, dtype=dtype)
+    # Read magnetic field data:
+    with urllib.request.urlopen(url_mag) as url:
+        dm = json.loads(url.read().decode())
+        dmn = [[np.nan if x == None else x for x in d] for d in dm]     # Replace None w NaN
+        dtype=[(x, 'float') for x in dmn[0]]
+        dates = [date2num(datetime.strptime(x[0], "%Y-%m-%d %H:%M:%S.%f")) for x in dmn[1:]]
+        dm_ = [tuple([d]+[float(y) for y in x[1:]]) for d, x in zip(dates, dm[1:])]
+        magfield = np.array(dm_, dtype=dtype)
+
+    btot = magfield['bt']
+    bxgsm = magfield['bx_gsm']
+    bygsm = magfield['by_gsm']
+    bzgsm = magfield['bz_gsm']
+    pv = plasma['speed']
+    pn = plasma['density']
+    pt = plasma['temperature']
+    itime_dt = magfield['time_tag']
+    itime_pla = plasma['time_tag']
+
+    # Linearly interpolate over gaps
+    if interpolate_gaps:
+        # Make sure plasma/mag data have matching timesteps:
+        last_timestep = np.min([magfield['time_tag'][-1], plasma['time_tag'][-1]])
+        first_timestep = np.max([magfield['time_tag'][0], plasma['time_tag'][0]])
+
+        nminutes = int((num2date(last_timestep)-num2date(first_timestep)).total_seconds()/60.)
+        itime_dt = np.asarray([num2date(first_timestep).replace(tzinfo=timezone.utc) + 
+                               timedelta(minutes=i) for i in range(nminutes)])
+        itime = date2num(itime_dt).astype(np.float64)
+        itime_pla = itime_dt
+        btot = np.interp(itime, magfield['time_tag'], btot)
+        bxgsm = np.interp(itime, magfield['time_tag'], bxgsm)
+        bygsm = np.interp(itime, magfield['time_tag'], bygsm)
+        bzgsm = np.interp(itime, magfield['time_tag'], bzgsm)
+        pv = np.interp(itime, plasma['time_tag'], pv)
+        pn = np.interp(itime, plasma['time_tag'], pn)
+        pt = np.interp(itime, plasma['time_tag'], pt)
+
+    # Pack into DataFrame
+    sw_mag = pd.DataFrame({'datetime': itime_dt,
+                           'btot': btot, 'bx': bxgsm, 'by': bygsm, 'bz': bzgsm})
+    sw_pla = pd.DataFrame({'datetime': itime_pla,
+                           'speed': pv, 'density': pn, 'temp': pt})
+
+    #logger.info('get_noaa_realtime_data: NOAA RTSW data read completed.')
+
+    return sw_pla, sw_mag
+
+
+def get_predstorm_realtime_data(urlpath):
+    """Reads data from PREDSTORM real-time output.
+
+    Parameters
+    ==========
+    resolution : str ['hour'(=default) or 'minute']
+        Data resolution, only two available.
+
+    Returns
+    =======
+    pred_data : pandas.Dataframe
+        Object containing all data.
+    """
+
+    dtype = [('time', 'float'), ('btot', 'float'), ('bx', 'float'), ('by', 'float'), ('bz', 'float'),
+            ('density', 'float'), ('speed', 'float'), ('dst', 'float'), ('kp', 'float')]
+    data = np.loadtxt(urlpath, usecols=[6,7,8,9,10,11,12,13,14], dtype=dtype)
+    datetimes = np.loadtxt(urlpath, usecols=[0,1,2,3,4], dtype=int)
+    timedata = []
+    for x in datetimes: 
+        timedata.append(datetime(x[0],x[1],x[2],x[3],x[4]))
+    timedata = np.array([x.replace(tzinfo=timezone.utc) for x in timedata])
+
+    pred_data = pd.DataFrame({var[0]: data[var[0]] for var in dtype})
+    pred_data['datetime'] = timedata
+
+    # np.loadtxt will download the file once and won't re-download, so remove it after use:
+    os.remove("helioforecast.space/static/sync/predstorm_real_1m.txt")
+
+    return pred_data
+
+
+def propagate_to_bow_shock(df_SW):
+
+    # Radius of the Earth
+    R_Earth = 6371. # km
+    # Distance of bow shock (estimated)
+    R_BOW = 14. * R_Earth # km
+    # Astronomical units
+    AU = 149597870.700 # km
+    # Distance Earth to L1 (technically not a constant)
+    dist_to_L1 = 1496547.603 # km
+
+    sw_variables = ['bx', 'by', 'bz', 'btot', 'speed', 'density', 'temp']
+    speed = df_SW['speed'].interpolate(limit_direction='both').to_numpy()
+    r_bow = AU - np.full(speed.shape, R_BOW)
+    r_L1 = AU - np.full(speed.shape, dist_to_L1)
+    timeshift = (r_bow - r_L1)/speed / 60. # in minutes
+
+    # Apply new timesteps to index:
+    timeshift_mins = np.array([pd.offsets.DateOffset(minutes=x) for x in timeshift])
+    df_SW_timenew = copy.copy(df_SW)
+    df_SW_timenew.index += np.array(timeshift_mins)
+
+    ts1 = df_SW_timenew.iloc[0].name
+    first_timestep = datetime(ts1.year, ts1.month, ts1.day, ts1.hour, ts1.minute)
+    n_mins = int((df_SW_timenew.iloc[-1].name.replace(tzinfo=None) - first_timestep.replace(tzinfo=None)).total_seconds() / 60.)
+    df_index_mins = [first_timestep.replace(tzinfo=timezone.utc) + timedelta(minutes=x) for x in range(n_mins)]
+
+    # Change index to numbers to make interpolation easier:
+    df_SW_timenew['newtimes'] = date2num(df_SW_timenew.index.to_numpy())
+    df_SW_timenew = df_SW_timenew.set_index('newtimes')
+    df_index_mins_num = date2num(df_index_mins)
+
+    # Reindexing to a higher sampling rate would be more accurate but much slower
+    df_SW_prop = (df_SW_timenew
+                             .reindex(df_SW_timenew.index.union(df_index_mins_num))
+                             .interpolate(method='index', limit=2)
+                             .reindex(df_index_mins_num)
+                            )
+
+    df_SW_prop['datetime'] = num2date(df_SW_prop.index.to_numpy())
+    df_SW_prop['time'] = df_SW_prop.index.to_numpy()
+    df_SW_prop = df_SW_prop.set_index('datetime')
+
+    print("Number of NaNs should stay roughly the same:")
+    print("# of NaNs in propagated data:    ", np.count_nonzero(np.isnan(df_SW_prop['speed'])))
+    print("# of NaNs in original data:      ", np.count_nonzero(np.isnan(df_SW['speed'])))
+
+    return df_SW_prop
+
+
 
