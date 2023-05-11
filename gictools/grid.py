@@ -6,7 +6,7 @@ gictools.grid
 Contains the PowerGrid object and functions for handling the network
 and grid data.
 
-Created 2015 by R Bailey, ZAMG Conrad Observatory (Vienna).
+Created 2015 by R Bailey, Conrad Observatory, GeoSphere Austria
 This is a further development of the code in https://github.com/bairaelyn/GEOMAGICA .
 Last updated Aug 2022.
 --------------------------------------------------------------------

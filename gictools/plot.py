@@ -5,7 +5,7 @@ gictools.plot
 
 Functions for plotting geomagnetic, geoelectric and GIC data.
 
-Created 2022 by R Bailey, ZAMG Conrad Observatory (Vienna).
+Created 2022 by R Bailey, Conrad Observatory, GeoSphere Austria
 Last updated July 2022.
 
 TODO: All of these functions should work with the same dataframe
@@ -43,7 +43,7 @@ l_min = 1. / (24.*60.) # minute as a fraction of day
 # --------------------------------- CREATING MAPS ---------------------------------------
 # =======================================================================================
 
-def create_map_of_austria(fig=None, figsize=(20,13), use_terrain=True, terrain_alpha=0.7):
+def create_map_of_austria(fig=None, figsize=(20,13), use_terrain=True, terrain_alpha=0.7, shpfile=''):
     '''Plots the geomagnetic field variations (H) and the modelled geoelectric field
     in both components.
     !! Requires cartopy !!
@@ -72,6 +72,7 @@ def create_map_of_austria(fig=None, figsize=(20,13), use_terrain=True, terrain_a
 
     import cartopy.crs as ccrs
     import cartopy.feature as cfeature
+
     
     if fig == None:
         fig = plt.figure(figsize=figsize)
@@ -94,6 +95,12 @@ def create_map_of_austria(fig=None, figsize=(20,13), use_terrain=True, terrain_a
 
     # Add borders:
     ax.add_feature(cfeature.BORDERS, zorder=3)
+
+    # Add shading to country:
+    if len(shpfile) > 0:
+        import cartopy.io.shapereader as shpreader
+        adm1_shapes = list(shpreader.Reader(shpfile).geometries())
+        ax.add_geometries(adm1_shapes, ccrs.PlateCarree(), facecolor='darkolivegreen', alpha=0.1)
 
     # Remove axis and add gridlines
     ax.gridlines(color='lightgrey', linestyle='-', draw_labels=True, zorder=2)
@@ -186,7 +193,7 @@ def add_dc_meas_substations_to_map(ax, st_dict, c_st='red', c_text='black', fs=1
 # ------------------------------- PLOTTING FUNCTIONS ------------------------------------
 # =======================================================================================
 
-def plot_map_with_gics(gic, Grid, En_val=0, Ee_val=0, figsize=(20,13), scaling=2):
+def plot_map_with_gics(gic, Grid, En_val=0, Ee_val=0, figsize=(20,13), scaling=2, shpfile=''):
     '''Plots a map with circles depicting the GICs at each location.
 
     Parameters:
@@ -209,7 +216,7 @@ def plot_map_with_gics(gic, Grid, En_val=0, Ee_val=0, figsize=(20,13), scaling=2
 
     # Create map object
     fig = plt.figure(figsize=figsize)
-    ax = create_map_of_austria(fig=fig, use_terrain=False)
+    ax = create_map_of_austria(fig=fig, use_terrain=False, shpfile=shpfile)
 
     line_voltages = Grid.volt_lines
 
@@ -231,12 +238,15 @@ def plot_map_with_gics(gic, Grid, En_val=0, Ee_val=0, figsize=(20,13), scaling=2
             if gval > coord_list[coords]:
                 coord_list[coords] = gval
 
+    i = 0
     for gx, gy, gp, gn, hvlv in zip(x, y, gic_pos, gic_neg, line_voltages):
         alpha = 0.25
         if (gx, gy) in coord_list:
             ax.plot(gx, gy, markersize=coord_list[(gx, gy)]*scaling, marker='o', zorder=11,
                     color='darkred', alpha=alpha, lw=0, transform=ccrs.Geodetic())
             coord_list.pop((gx, gy))
+            i += 1
+    print(i)
             
     # Plot arrow for geoelectric field direction:
     E_tot = np.sqrt(En_val**2. + Ee_val**2.)

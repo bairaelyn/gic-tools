@@ -3,18 +3,19 @@
 --------------------------------------------------------------------
 gictools.efield
 
-Tools for handling geoelectric field modelling.
+Tools for handling geomagnetic data in preparation for geoelectric 
+field modelling.
 
-Created 2020-2021 by R Bailey, ZAMG Conrad Observatory (Vienna).
+Created 2020-2021 by R Bailey, Conrad Observatory, GeoSphere Austria
 Some functions taken or adapted from Greg Lucas (USGS):
 	https://github.com/greglucas/bezpy/blob/master/bezpy/mt/site.py
-Last updated October 2021.
+Last updated May 2023.
 --------------------------------------------------------------------
 """
 
 from datetime import datetime, timedelta
 import numpy as np
-from matplotlib.dates import date2num, num2date
+from matplotlib.dates import date2num, num2date, datestr2num
 
 # *******************************************************************
 #                           FUNCTIONS
@@ -131,6 +132,38 @@ def _calc_Z(freqs, resistivities, thicknesses):
     Z_output[2, :] = -Z_output[1, :]
 
     return Z_output
+
+
+def load_WIC_data_from_web(starttime):
+    '''Loads data from observatory web service and returns X, Y and time array.
+
+    Parameters:
+    -----------
+    starttime :: string
+        starttime can be in many formats, among others: timef_wic = "%Y-%m-%dT%H:%M:%SZ"
+    '''
+
+    import json
+    try:
+        from urllib.request import urlopen
+    except:
+        from urllib2 import urlopen
+
+    timef_wic = "%Y-%m-%dT%H:%M:%SZ"
+
+    # of=output format, starttime=time to take measurements from
+    url_wic = "https://cobs.zamg.ac.at/data/webservice/query.php?id=WIC&of=json&starttime={}".format(starttime)
+    try:
+        with urlopen(url_wic) as url:
+            wic_data = json.loads (url.read().decode("utf-8").strip('<pre>').strip('</pre>'))
+    except json.decoder.JSONDecodeError:
+        raise Exception(" - No new WIC data. Exiting. (Run code with --skipdownload to run anyway.)")
+        sys.exit()
+
+    wic_X, wic_Y = wic_data['ranges']['X']['values'], wic_data['ranges']['Y']['values']
+    wic_time = wic_data['domain']['axes']['t']['values']
+
+    return datestr2num(wic_time), np.array(wic_X), np.array(wic_Y)
 
 
 def make_test_efield(Grid, en_val, ee_val, condmodel='39'):
