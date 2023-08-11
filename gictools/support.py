@@ -3,7 +3,7 @@
 --------------------------------------------------------------------
 gictools.support
 
-General tools for scripting and data handling when using GIC/Efield 
+General tools for scripting and data handling when using GIC/Efield
 data in real-time.
 
 Created 2023 by R Bailey, Conrad Observatory, GeoSphere Austria
@@ -16,16 +16,16 @@ import logging
 import logging.config
 
 
-LOGGING_CONFIG = { 
+LOGGING_CONFIG = {
     'version': 1,
     'disable_existing_loggers': False,
-    'formatters': { 
-        'standard': { 
+    'formatters': {
+        'standard': {
             'format': '%(asctime)s %(name)s - %(levelname)s: %(message)s'
         },
     },
-    'handlers': { 
-        'file': { 
+    'handlers': {
+        'file': {
             'level': 'INFO',
             'formatter': 'standard',
             'class': 'logging.FileHandler',
@@ -33,12 +33,12 @@ LOGGING_CONFIG = {
             'mode': 'w+',
         },
     },
-    'loggers': { 
+    'loggers': {
         '': {  # root logger
             'handlers': ['file'],
             'level': 'INFO'
         },
-    } 
+    }
 }
 
 def init_logging(verbose=False):

@@ -43,7 +43,7 @@ l_min = 1. / (24.*60.) # minute as a fraction of day
 # --------------------------------- CREATING MAPS ---------------------------------------
 # =======================================================================================
 
-def create_map_of_austria(fig=None, figsize=(20,13), use_terrain=True, terrain_alpha=0.7, shpfile=''):
+def create_map_of_austria(fig=None, ax=None, figsize=(20,13), use_terrain=True, Bfield_data=True, terrain_alpha=0.7, shpfile=''):
     '''Plots the geomagnetic field variations (H) and the modelled geoelectric field
     in both components.
     !! Requires cartopy !!
@@ -72,14 +72,21 @@ def create_map_of_austria(fig=None, figsize=(20,13), use_terrain=True, terrain_a
 
     import cartopy.crs as ccrs
     import cartopy.feature as cfeature
-
     
     if fig == None:
         fig = plt.figure(figsize=figsize)
 
-    # Define projection:
     proj = ccrs.TransverseMercator(13.4, approx=True)
-    ax = fig.add_subplot(111, projection=proj)
+
+    if len(Bfield_data) > 0.:
+        from matplotlib.gridspec import GridSpec
+        gs = GridSpec(2, 1, height_ratios=[4, 1])
+        ax = fig.add_subplot(gs[0], projection=proj)
+        ax_B = fig.add_subplot(gs[1])
+    else:
+        ax = fig.add_subplot(111, projection=proj)
+
+    # Define projection:
     ax.set_extent([9, 17.5, 46, 49.3], crs=ccrs.PlateCarree())
     
     # Load image tile for background:
@@ -106,7 +113,10 @@ def create_map_of_austria(fig=None, figsize=(20,13), use_terrain=True, terrain_a
     ax.gridlines(color='lightgrey', linestyle='-', draw_labels=True, zorder=2)
     ax.axis("off")
     
-    return ax
+    if len(Bfield_data) > 0.:
+        return fig, [ax, ax_B]
+    else:
+        return fig, [ax]
 
 
 def add_network_to_map(ax, Grid, c_lines='slategray', ms=5):
@@ -193,7 +203,7 @@ def add_dc_meas_substations_to_map(ax, st_dict, c_st='red', c_text='black', fs=1
 # ------------------------------- PLOTTING FUNCTIONS ------------------------------------
 # =======================================================================================
 
-def plot_map_with_gics(gic, Grid, En_val=0, Ee_val=0, figsize=(20,13), scaling=2, shpfile=''):
+def plot_map_with_gics(gic, Grid, En_val=0, Ee_val=0, point_range=[], Bfield_data=[], figsize=(16,13), scaling=2, shpfile=''):
     '''Plots a map with circles depicting the GICs at each location.
 
     Parameters:
@@ -214,15 +224,18 @@ def plot_map_with_gics(gic, Grid, En_val=0, Ee_val=0, figsize=(20,13), scaling=2
     None
     '''
 
-    # Create map object
     fig = plt.figure(figsize=figsize)
-    ax = create_map_of_austria(fig=fig, use_terrain=False, shpfile=shpfile)
+    
+    fig, axes = create_map_of_austria(fig=fig, use_terrain=False, shpfile=shpfile, Bfield_data=Bfield_data)
+    ax_map = axes[0]
 
     line_voltages = Grid.volt_lines
 
-    ax = add_network_to_map(ax, Grid, c_lines='lightgray')
+    # Plot the power grid substations and network lines:
+    ax_map = add_network_to_map(ax_map, Grid, c_lines='lightgray')
 
     # Plot GICs as circles:
+    # ---------------------
     x, y = Grid.longitudes, Grid.latitudes
     gic_abs = np.abs(gic)
     gic_pos = np.maximum(gic, 0)
@@ -238,25 +251,65 @@ def plot_map_with_gics(gic, Grid, En_val=0, Ee_val=0, figsize=(20,13), scaling=2
             if gval > coord_list[coords]:
                 coord_list[coords] = gval
 
-    i = 0
     for gx, gy, gp, gn, hvlv in zip(x, y, gic_pos, gic_neg, line_voltages):
-        alpha = 0.25
+        alpha = 0.4 # 0.25
         if (gx, gy) in coord_list:
-            ax.plot(gx, gy, markersize=coord_list[(gx, gy)]*scaling, marker='o', zorder=11,
+            ax_map.plot(gx, gy, markersize=coord_list[(gx, gy)]*scaling, marker='o', zorder=11,
                     color='darkred', alpha=alpha, lw=0, transform=ccrs.Geodetic())
             coord_list.pop((gx, gy))
-            i += 1
-    print(i)
             
     # Plot arrow for geoelectric field direction:
+    # -------------------------------------------
+    # Look here for another arrow option: https://matplotlib.org/stable/gallery/shapes_and_collections/arrow_guide.html
+    # Styling here: https://matplotlib.org/stable/api/_as_gen/matplotlib.patches.FancyArrowPatch.html#matplotlib.patches.FancyArrowPatch
     E_tot = np.sqrt(En_val**2. + Ee_val**2.)
     arrow_len = 0.3
-    x_pos, y_pos = 3.9-arrow_len*Ee_val/E_tot/2., 1.1-arrow_len*En_val/E_tot/2.
+    x_pos, y_pos = 3.9-arrow_len*Ee_val/E_tot/2., 3.9-arrow_len*En_val/E_tot/2.
     plt.arrow(x=x_pos, y=y_pos, dx=arrow_len*Ee_val/E_tot, dy=arrow_len*En_val/E_tot, 
               width=0.05, head_length=0.2, fc='k', ec='k',
               transform=fig.dpi_scale_trans)
 
-    return ax
+    # Plot the magnetic field data
+    # -----------------------------
+    if len(Bfield_data) > 0.:
+        ax_H =   axes[1]
+        ax_H.plot_date(Bfield_data[0], Bfield_data[1], 'k-', lw=1)
+        ax_H.axvspan(Bfield_data[0][point_range[0]], Bfield_data[0][point_range[-1]], facecolor='darkred', lw=3, alpha=alpha)
+        ax_H.set_xlim(Bfield_data[0][0], Bfield_data[0][-1]+1/24.)
+        ax_H.set_xlabel("Time [UTC]")
+        ax_H.set_ylabel("H [nT]")
+
+        # FORMATTING
+        # -----------
+        for ax_side in ['bottom', 'top', 'right', 'left']:
+            ax_H.spines[ax_side].set_color('darkgrey')
+
+        ax_H.set_title("Horizontal ground magnetic field variations (H) over the past 3 days")
+
+
+    import matplotlib.patches as mpatches
+
+    bbox = ax_map.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+    width, height = bbox.width, bbox.height
+    adj_w, adj_h = width/(width+height), height/(width+height)
+    base_length_x, base_length_y = 0.3/adj_w, 0.3/adj_h # at max_E_exp
+    max_E_exp = 100.
+    adj_En, adj_Ee = np.sqrt(np.abs(En_val)/max_E_exp), np.sqrt(np.abs(Ee_val)/max_E_exp)
+
+    x_tail_N, x_tail_E = 0.05, 0.046
+    y_tail_N, y_tail_E = 0.042, 0.05
+    x_head_N, x_head_E = 0.05, 0.046 + base_length_x*adj_Ee
+    y_head_N, y_head_E = 0.042 + base_length_y*adj_En, 0.05
+    arrow_N = mpatches.FancyArrowPatch((x_tail_N, y_tail_N), (x_head_N, y_head_N), facecolor='darkolivegreen',
+                                       lw=0, mutation_scale=20, transform=ax_map.transAxes)
+    arrow_E = mpatches.FancyArrowPatch((x_tail_E, y_tail_E), (x_head_E, y_head_E), facecolor='darkolivegreen',
+                                       lw=0, mutation_scale=20, transform=ax_map.transAxes)
+    ax_map.add_patch(arrow_N)
+    ax_map.add_patch(arrow_E)
+
+    plt.subplots_adjust(hspace=0.1)
+
+    return fig
 
 
 def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30., max_elim=210., past_days=3, savepath=''):
@@ -330,7 +383,7 @@ def plot_B_E_time_series(t, H, En, Ee, min_dbdt=5., max_dbdt=30., max_elim=210.,
     axes[1].set_xlabel("Time [UTC]")
     axes[0].set_ylabel("H [nT]")
     axes[1].set_ylabel("E [mV/km]")
-    axes[0].set_title("Past 7 days hours ({}) of geomagnetic field (H) and geoelectric field (E) in Austria".format(today))
+    axes[0].set_title("Past 7 days ({}) of geomagnetic field (H) and geoelectric field (E) in Austria".format(today))
 
     # Adjust spacing:
     plt.subplots_adjust(hspace=0.28)

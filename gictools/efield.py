@@ -3,7 +3,7 @@
 --------------------------------------------------------------------
 gictools.efield
 
-Tools for handling geomagnetic data in preparation for geoelectric 
+Tools for handling geomagnetic data in preparation for geoelectric
 field modelling.
 
 Created 2020-2021 by R Bailey, Conrad Observatory, GeoSphere Austria
@@ -134,7 +134,7 @@ def _calc_Z(freqs, resistivities, thicknesses):
     return Z_output
 
 
-def load_WIC_data_from_web(starttime):
+def load_WIC_data_from_web(starttime, endtime=''):
     '''Loads data from observatory web service and returns X, Y and time array.
 
     Parameters:
@@ -152,12 +152,16 @@ def load_WIC_data_from_web(starttime):
     timef_wic = "%Y-%m-%dT%H:%M:%SZ"
 
     # of=output format, starttime=time to take measurements from
-    url_wic = "https://cobs.zamg.ac.at/data/webservice/query.php?id=WIC&of=json&starttime={}".format(starttime)
+    if len(endtime) > 0.:
+        url_wic = "https://cobs.zamg.ac.at/data/webservice/query.php?id=WIC&of=json&starttime={}&endtime={}".format(
+            starttime, endtime)
+    else:
+        url_wic = "https://cobs.zamg.ac.at/data/webservice/query.php?id=WIC&of=json&starttime={}".format(starttime)
     try:
         with urlopen(url_wic) as url:
             wic_data = json.loads (url.read().decode("utf-8").strip('<pre>').strip('</pre>'))
     except json.decoder.JSONDecodeError:
-        raise Exception(" - No new WIC data. Exiting. (Run code with --skipdownload to run anyway.)")
+        raise Exception(" - No new WIC data. Exiting.")
         sys.exit()
 
     wic_X, wic_Y = wic_data['ranges']['X']['values'], wic_data['ranges']['Y']['values']

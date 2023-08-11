@@ -46,6 +46,8 @@ class MeasurementStation:
             Startdate of measurements and enddate (if applicable).
         bad_data :: str
             List of ranges containing bad/contaminated measurements.
+        gic_coeffs :: list of floats, len = 2
+            Coefficient [a,b] for GIC_st = a * Ex + b * Ey
         notes :: str
             Anything worth noting about the station.
 
