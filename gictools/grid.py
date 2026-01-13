@@ -422,6 +422,10 @@ class PowerGrid:
         self.lat_cells = np.asarray([self.sbound + n*self.x_inc for n in range(0, self.x_ncells)])
         self.lon_cells = np.asarray([self.wbound + n*self.y_inc for n in range(0, self.y_ncells)])
 
+        # Prepare path and matrix data for GIC calculation:
+        self.prepare_line_paths(n_steps)
+        self.prepare_overwrite_mapping()
+
         # RUN CALCULATIONS HERE
         # ---------------------------------------------------------------
         n_loops = En[list(En.keys())[0]].shape[0]
@@ -432,11 +436,17 @@ class PowerGrid:
 
             pool = multiprocessing.Pool()
             other_args = [repeat(x) for x in [self, En, Ee, n_loops, lmods, n_steps, use_interp2d, verbose]]
-            pool_results = pool.starmap(_calc_gic_in_grid, zip(n_efields, *other_args))
+            if use_interp2d: # slow 2D method
+                pool_results = pool.starmap(_calc_gic_in_grid_2D, zip(n_efields, *other_args))
+            else: # fast 1D method
+                pool_results = pool.starmap(_calc_gic_in_grid, zip(n_efields, *other_args))
         else:
             pool_results = []
             for ne in n_efields:
-                pool_results.append(_calc_gic_in_grid(ne, self, En, Ee, n_loops, lmods, n_steps, use_interp2d, verbose))
+                if use_interp2d: # slow 2D method
+                    pool_results.append(_calc_gic_in_grid_2D(ne, self, En, Ee, n_loops, lmods, n_steps, use_interp2d, verbose))
+                else:
+                    pool_results.append(_calc_gic_in_grid(ne, self, En, Ee, n_loops, lmods, n_steps, use_interp2d, verbose))
         # ---------------------------------------------------------------
 
         return pool_results
@@ -509,6 +519,126 @@ class PowerGrid:
 
         print("")
 
+    def prepare_line_paths(self, n_steps: int):
+        """
+        Precompute per-connection geometry and path sampling.
+        Call this ONCE before looping over ne.
+        Stores arrays on Grid for fast reuse.
+        """
+        n_conns = self.nconnects
+        nfrom = np.asarray(self.nodefrom, dtype=np.int64)
+        nto   = np.asarray(self.nodeto,   dtype=np.int64)
+
+        # Node coordinates as vectors
+        lat = np.asarray(self.latitudes,  dtype=np.float64)
+        lon = np.asarray(self.longitudes, dtype=np.float64)
+
+        slat = lat[nfrom]
+        slon = lon[nfrom]
+        flat = lat[nto]
+        flon = lon[nto]
+
+        # Distances/azimuths per connection
+        intline = np.empty(n_conns, dtype=np.float64)
+        intazi  = np.empty(n_conns, dtype=np.float64)
+        for i in range(n_conns):
+            f = nfrom[i]
+            t = nto[i]
+            intline[i] = self.dists[f][t]
+            intazi[i]  = self.azi[f][t]
+
+        # Step sizes per connection
+        steplat = (flat - slat) / float(n_steps)
+        steplon = (flon - slon) / float(n_steps)
+
+        # Path samples per connection (n_conns x n_steps)
+        pathlatsteps = np.empty((n_conns, n_steps), dtype=np.float64)
+        pathlonsteps = np.empty((n_conns, n_steps), dtype=np.float64)
+
+        # Vectorized base "j" for broadcasting
+        j = np.arange(n_steps, dtype=np.float64)[None, :]  # shape (1, n_steps)
+
+        # Default linear sampling: start + j*step
+        pathlatsteps[:] = slat[:, None] + j * steplat[:, None]
+        pathlonsteps[:] = slon[:, None] + j * steplon[:, None]
+
+        # Handle zero-step cases (keep constant)
+        zero_lat = steplat == 0.0
+        if np.any(zero_lat):
+            pathlatsteps[zero_lat, :] = slat[zero_lat, None]
+
+        zero_lon = steplon == 0.0
+        if np.any(zero_lon):
+            pathlonsteps[zero_lon, :] = slon[zero_lon, None]
+
+        cosazi = np.cos(intazi)
+        sinazi = np.sin(intazi)
+
+        # Prepare edge resistance array:
+        R_edge = np.asarray(self.resis)[nfrom, nto].astype(np.float64, copy=False)
+
+        # Guard against zeros / negatives
+        R_edge = np.where(R_edge > 0.0, R_edge, np.nan)
+
+        # Optional: cache trig + dl for later integration speed
+        self._gicgeom = {
+            "n_steps": n_steps,
+            "nfrom": nfrom,
+            "nto": nto,
+            "slat": slat, "slon": slon, "flat": flat, "flon": flon,
+            "intline": intline,
+            "intazi": intazi,
+            "cosazi": cosazi,
+            "sinazi": sinazi,
+            "dl": intline / float(n_steps),
+            "steplat": steplat,
+            "steplon": steplon,
+            "pathlatsteps": pathlatsteps,
+            "pathlonsteps": pathlonsteps,
+            "R_edge": R_edge,
+        }
+
+    def prepare_overwrite_mapping(self):
+        """
+        Precompute the overwrite structure.
+        Call this ONCE before looping over ne.
+        """
+        g = self._gicgeom
+        nfrom = g["nfrom"]
+        nto   = g["nto"]
+        n_nodes = self.nnodes
+
+        n_conns = len(nfrom)
+
+        # Directed assignment stream
+        rows = np.concatenate([nfrom, nto])
+        cols = np.concatenate([nto, nfrom])
+        conn = np.concatenate([np.arange(n_conns), np.arange(n_conns)])
+
+        # Voltage sign is applied later
+        signs = np.concatenate([np.ones(n_conns), -np.ones(n_conns)])
+
+        # Unique key for directed (row,col)
+        keys = rows * n_nodes + cols
+
+        # Find last assignment index per directed pair
+        rev = np.arange(keys.size - 1, -1, -1)
+        _, first_rev = np.unique(keys[rev], return_index=True)
+        last_idx = rev[first_rev]
+
+        # Cache everything needed at runtime
+        g["_rows_u"]  = rows[last_idx]
+        g["_cols_u"]  = cols[last_idx]
+        g["_conn_u"] = conn[last_idx]
+        g["_signs_u"] = signs[last_idx]
+
+        # Cache resistance lookup
+        R = np.asarray(self.resis, dtype=np.float64)
+        g["_R_u"] = R[g["_rows_u"], g["_cols_u"]]
+
+        # Mask for valid resistance
+        g["_Rmask_u"] = g["_R_u"] > 0.0
+
 
     # ------------------------------------------------
     #    ANALYTICS FUNCTIONS
@@ -572,7 +702,139 @@ class PowerGrid:
 #      VI.  FUNCTIONS FOR CALCULATING GICS
 # -------------------------------------------------------------------
 
+# Reworked, faster code for 1D E-fields
 def _calc_gic_in_grid(ne, Grid, enday, eeday, n_loops, lmods, n_steps, use_interp2d, verbose):
+    '''
+    Needs lat, lon, systemmat, earthimp.
+    Note: use_interp2d is not supported in this version. Revert to 
+    _calc_gic_in_grid_old to use use_interp2d=True. This version is
+    roughly 20x faster than the original calculation. A version that
+    used pre-solving to speed up the lstsq function also speeds up 
+    the code (by another factor of 4) but seems to introduce errors.
+
+    Parameters
+    ----------
+    ne :: int
+        Current iteration number
+    Grid :: gictools.grid.PowerGrid object
+        Contains all the grid data for the calculation.
+    enday, eeday :: dict('layermodel': np.array), shape=(ne, Grid.lon_cells, Grid.loat_cells)
+        Dictionaries containing E-field at certain timesteps.
+    n_loops :: int
+        Total number of iterations.
+    lmods :: list(str)
+        If using more than one layer model for the E-field, list here by model name.
+    n_steps :: int
+        Number of steps to iterate along the power lines.
+    use_interp2d :: bool
+        If True, E-field will be interpolated over (much slower)
+    verbose :: bool
+        If True, print steps.
+    '''
+
+    if verbose:
+        print("On loop #{} of {} for calculating GIC...".format(ne+1, n_loops))
+    if use_interp2d:
+        print("This is not supported in this function! Use _calc_gic_in_grid_old for use_interp2d=True.")
+        sys.exit()
+
+    # ===============================================================
+    # PART III: Integrate over E for potential V along lines
+    # ===============================================================
+    # LP1985: Line-integrated geoelectric field produces a voltage
+    # V = int E * dl  (LP1985, conceptually)
+    # Here simplified because E is spatially constant along the line.
+    # ===============================================================
+
+    n_conns, n_nodes = Grid.nconnects, Grid.nnodes
+    g = Grid._gicgeom
+
+    # Grid geometry (precomputed)
+    nfrom   = g["nfrom"]
+    nto     = g["nto"]
+    intline = g["intline"]     # total line length (dl integrated)
+    cosazi  = g["cosazi"]      # projection of E_n onto line direction
+    sinazi  = g["sinazi"]      # projection of E_e onto line direction
+
+    # Uniform geoelectric field for this timestep (converted mV/km → V/km)
+    layermodel = lmods[0]
+    En = enday[layermodel][ne, 0, 0] / 1000.0
+    Ee = eeday[layermodel][ne, 0, 0] / 1000.0
+
+    # Line voltages from E-field integration
+    # LP1985: V = E_parallel * line_length
+    Vn_tot = En * cosazi * intline
+    Ve_tot = Ee * sinazi * intline
+
+    # ===============================================================
+    # PART IV: Use V and system matrix to determine current (J)
+    # ===============================================================
+    # J = V / R   (Ohm’s law applied to each connection)
+    # ===============================================================
+
+    # Directed edge representation preserving dense overwrite semantics
+    rows  = g["_rows_u"]
+    cols  = g["_cols_u"]
+    sign  = g["_signs_u"]
+    conn  = g["_conn_u"]
+    R_u   = g["_R_u"]       # directional resistances R_ij
+    mask  = g["_Rmask_u"]   # only where R > 0
+
+    # -------------------------------
+    # Ohm’s law applied on each line:
+    # I_ij = V_ij / R_ij
+    # -------------------------------
+    contribN = np.zeros_like(R_u, dtype=np.float64)
+    contribE = np.zeros_like(R_u, dtype=np.float64)
+
+    contribN[mask] = sign[mask] * Vn_tot[conn[mask]] / R_u[mask]
+    contribE[mask] = sign[mask] * Ve_tot[conn[mask]] / R_u[mask]
+
+    contribN = np.nan_to_num(contribN, nan=0.0, posinf=0.0, neginf=0.0)
+    contribE = np.nan_to_num(contribE, nan=0.0, posinf=0.0, neginf=0.0)
+
+    # -----------------------------------------
+    # LP1985: Assembly of current source vector
+    # J = sum of line currents connected to node
+    # -----------------------------------------
+    Nsourcevec = np.zeros(n_nodes, dtype=np.float64)
+    Esourcevec = np.zeros(n_nodes, dtype=np.float64)
+    np.add.at(Nsourcevec, cols, contribN)
+    np.add.at(Esourcevec, cols, contribE)
+
+    # --------------------------------------------------------------
+    # LP1985 eq. (12): Network solution
+    # (1 + YZ)^(-1) * J
+    #
+    # Implemented here as a least-squares solve of:
+    # systemmat * netcon = sourcevec
+    # --------------------------------------------------------------
+    B = np.vstack([Nsourcevec, Esourcevec]).T
+    X, *_ = np.linalg.lstsq(Grid.systemmat, B, rcond=-1)
+    netconN = X[:, 0]
+    netconE = X[:, 1]
+    netconT = netconN + netconE
+
+    # --------------------------------------------------------------
+    # LP1985: Transformer / line currents derived from node voltages
+    # V_node = netcon * (R_earth + R_transformer)
+    # I_line = delta-V / R_line   (Ohm’s law again)
+    # --------------------------------------------------------------
+    scale = (Grid.r_earth + Grid.r_transformers)
+    Vn_trans = netconN * scale
+    Ve_trans = netconE * scale
+
+    r_lines = np.asarray(Grid.r_lines, dtype=np.float64)
+    IlineN = (Vn_trans[nfrom] - Vn_trans[nto]) / r_lines
+    IlineE = (Ve_trans[nfrom] - Ve_trans[nto]) / r_lines
+
+    # NOTE: returning dense Nvoltage is intentionally avoided for speed.
+    results = [netconN, netconE, netconT, IlineN, IlineE, Vn_tot, Nsourcevec]
+    return results
+
+
+# Original (slow, but works with 2D E-fields)
+def _calc_gic_in_grid_2D(ne, Grid, enday, eeday, n_loops, lmods, n_steps, use_interp2d, verbose):
     '''
     Needs lat, lon, systemmat, earthimp.
 
