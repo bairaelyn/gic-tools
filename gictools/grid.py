@@ -207,6 +207,8 @@ class PowerGrid:
         res_line = []
         # Description of what line is:
         type_line = [] # 380 or 220 = HV or LV line, 0 = transformer
+        # ID of line:
+        id_line = [] # Code for power line, 0 = transformer
         for i in range(len(transdata)):
             trans = transdata[i].strip("\n").replace(',','.').replace("'",'').split("\t")
             station = trans[1]
@@ -232,6 +234,8 @@ class PowerGrid:
                 res_line.append(res_trans_LV)
                 type_line.append(0)
                 type_line.append(0)
+                id_line.append(0)
+                id_line.append(0)
             # In other transformers, connections are HV --> Ground and LV --> Ground
             elif trans_type == 'GSU':
                 # HV-to-Ground connection:
@@ -239,17 +243,20 @@ class PowerGrid:
                 nodeto.append(nodeto_HV)
                 res_line.append(res_trans_HV)
                 type_line.append(0)
+                id_line.append(0)
             elif trans_type == 'GY-GY':
                 # HV-to-Ground connection:
                 nodefrom.append(nodefrom_HV)
                 nodeto.append(nodeto_HV)
                 res_line.append(res_trans_HV)
                 type_line.append(0)
+                id_line.append(0)
                 # LV-to-Ground connection:
                 nodefrom.append(nodefrom_LV)
                 nodeto.append(nodeto_LV)
                 res_line.append(res_trans_LV)
                 type_line.append(0)
+                id_line.append(0)
 
         # -------------------------
         # Read in connection data:
@@ -281,6 +288,7 @@ class PowerGrid:
 
             res_line.append(float(conns[5])*scale)
             type_line.append(linevoltage)
+            id_line.append(conns[0])
             try:
                 if float(conns[3]) > 0.:
                     len_lines[nodefrom[-1], nodeto[-1]] = float(conns[3])
@@ -317,6 +325,7 @@ class PowerGrid:
         self.r_earth = res_earth
         self.r_transformers = np.zeros(len(res_earth))
         #self.transformer_type = transtype
+        self.id_lines = id_line
         self.r_lines = res_line
         self.volt_lines = type_line
         self.nodefrom = np.array(nodefrom)
@@ -452,9 +461,114 @@ class PowerGrid:
         return pool_results
 
 
-    def calc_gic_in_transformers(self, gic_mod_results, gicfilepath='', print_results=False):
+    def calc_gic_in_power_lines(self, gic_mod_results, gicfilepath='', print_results=False, return_xy=False):
+        """
+        Takes input from PowerGrid.calc_gic_in_grid (output list from _calc_gic_in_grid)
+        and returns GIC time series on power lines keyed by unique self.id_lines.
+        See also self.calc_gic_in_transformers().
+
+        Parameters
+        ----------
+        gic_mod_results : list
+            List over timesteps; each element unpacks as:
+            (netconN, netconE, netconT, IlineN, IlineE, Vn_tot, Nsourcevec)
+        gicfilepath : str
+            Optional file output path
+        print_results : bool (default False)
+            Print first timestep values
+        return_xy : bool (default False)
+            If True, also return _GICX and _GICY components
+
+        Returns
+        -------
+        line_gic : dict
+            Keys:
+              "<ID>"      -> list of GIC_TOT per timestep
+              (optional) "<ID>_GICX", "<ID>_GICY"
+        """
+
+        # Build mapping: line ID -> connection index
+        id_to_index = {}
+        for i in range(self.nconnects):
+            lid = self.id_lines[i]
+            if lid == "0" or lid == 0:
+                continue  # skip transformers
+            id_to_index[str(lid)] = i  # IDs are unique
+
+        # Initialize output dictionary
+        if return_xy:
+            line_gic = {
+                lid + suffix: []
+                for lid in id_to_index.keys()
+                for suffix in ["", "_GICX", "_GICY"]
+            }
+        else:
+            line_gic = {lid: [] for lid in id_to_index.keys()}
+
+        # Optional file output
+        f = None
+        if gicfilepath:
+            f = open(gicfilepath, "w", encoding="utf-8")
+            f.write("# Power line GICs keyed by unique ID (ID=0 filtered)\n")
+            f.write("# Columns: timestep\tID\tGIC_N\tGIC_E\tGIC_TOT\n")
+
+        # Loop over timesteps
+        for ne in range(len(gic_mod_results)):
+            netconN, netconE, netconT, IlineN, IlineE, _, _ = gic_mod_results[ne]
+
+            if print_results and ne == 0:
+                print("\nPOWER LINE CURRENTS")
+                print("-------------------")
+                print("{:<15}{:>10}{:>10}{:>10}".format("ID", "GIC_N", "GIC_E", "GIC_TOT"))
+
+            for lid, i in id_to_index.items():
+                gic_x = IlineN[i]
+                gic_y = IlineE[i]
+                gic_tot = gic_x + gic_y  # same convention as transformers
+
+                line_gic[lid].append(gic_tot)
+
+                if return_xy:
+                    line_gic[lid + "_GICX"].append(gic_x)
+                    line_gic[lid + "_GICY"].append(gic_y)
+
+                if print_results and ne == 0:
+                    print("{:<15}{:10.3f}{:10.3f}{:10.3f}".format(lid, gic_x, gic_y, gic_tot))
+
+                if f is not None:
+                    f.write(f"{ne}\t{lid}\t{gic_x:.6f}\t{gic_y:.6f}\t{gic_tot:.6f}\n")
+
+        if f is not None:
+            f.close()
+
+        return line_gic
+
+
+    def calc_gic_in_transformers(self, gic_mod_results, gicfilepath='', print_results=False, return_xy=False):
         '''
-        Takes input from the function PowerGrid.calc_gic_in_grid.
+        Takes input from the function self.calc_gic_in_grid() and filters
+        results down to transformer level.
+        See also self.calc_gic_in_power_lines().
+
+        Parameters
+        ----------
+        gic_mod_results : list
+            List over timesteps; each element unpacks as:
+            (netconN, netconE, netconT, IlineN, IlineE, Vn_tot, Nsourcevec)
+        gicfilepath : str
+            Optional file output path
+        print_results : bool (default False)
+            Print first timestep values for testing.
+        return_xy : bool (default False)
+            If True, also return _GICX and _GICY components
+
+        Returns
+        -------
+        trans_gic : dict
+            Keys:
+              "<ID>"      -> list of GIC_TOT per timestep
+              (optional) "<ID>_GICX", "<ID>_GICY"
+        """
         '''
 
         # Dictionary of transformer location as a connection
@@ -489,8 +603,9 @@ class PowerGrid:
                     gic_x, gic_y = IlineN[i]*scale, IlineE[i]*scale
                     gic_tot = gic_x + gic_y
                     trans_gic[usecode].append(gic_tot)
-                    trans_gic[usecode+'_GICX'].append(gic_x)
-                    trans_gic[usecode+'_GICY'].append(gic_y)
+                    if return_xy:
+                        trans_gic[usecode+'_GICX'].append(gic_x)
+                        trans_gic[usecode+'_GICY'].append(gic_y)
                     output = "{}\t{:10.3f}\t{:10.3f}\t{:10.3f}".format(usecode, gic_x, gic_y, gic_tot)
                     if print_results and ne == 0:
                         if i == 0:
@@ -499,6 +614,7 @@ class PowerGrid:
                         print(output)
 
         return trans_gic
+
 
     def calc_gic_in_substations(self, gic_mod_results, gicfilepath='', print_results=False):
         '''
@@ -518,6 +634,7 @@ class PowerGrid:
                     print(output)
 
         print("")
+
 
     def prepare_line_paths(self, n_steps: int):
         """

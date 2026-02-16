@@ -80,17 +80,17 @@ def find_ppmcc(arr1, arr2):
         DataFrame of time series solar wind data with time as the index.
     i_samples : np.array
         Indices of samples.
-        
+
     Returns:
     --------
     r : float
         The PPMCC as a float.
     '''
-    
+
     if type(arr1) == list or type(arr1) == list:
         arr1 = np.array(arr1)
         arr2 = np.array(arr2)
-        
+
     arr1 = arr1.astype(float)
     arr2 = arr2.astype(float)
 
@@ -117,24 +117,24 @@ def find_performance_parameter(mea, mod):
         Measurements that are to be compared to model.
     mod : List or np.array
         Model results that will be compared to measurements.
-        
+
     Returns:
     --------
     PP : float
         The performance parameter as a float.
     '''
-        
+
     if type(mea) == list or type(mod) == list:
         mea = np.array(mea)
         mod = np.array(mod)
-        
+
     mea = mea.astype(float)
     mod = mod.astype(float)
-    
+
     m_mea = mea.mean()
     m_mod = mod.mean()
     std_mea = np.std(mea)
-    
+
     PP = 1. - (1./std_mea) * np.sqrt( np.sum( ((mea-m_mea) - (mod-m_mod))**2. ) / len(mea) )
-    
+
     return PP
