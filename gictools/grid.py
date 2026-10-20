@@ -350,7 +350,7 @@ class PowerGrid:
     #     FUNCTIONS FOR CALCULATING GIC
     # ------------------------------------------------
 
-    def calc_gic_in_grid(self, En, Ee, lmods=['39'], n_steps=200, use_interp2d=False, threading=True, verbose=False):
+    def calc_gic_in_grid(self, En, Ee, lmods=['39'], n_steps=200, use_interp2d=False, threading=True, verbose=False, use_horton_geom=False):
         '''
         Provide a list of (EN, EE) tuples, where each EN/EE is a 
         dictionary containing different layer models, and each layer
@@ -432,7 +432,7 @@ class PowerGrid:
         self.lon_cells = np.asarray([self.wbound + n*self.y_inc for n in range(0, self.y_ncells)])
 
         # Prepare path and matrix data for GIC calculation:
-        self.prepare_line_paths(n_steps)
+        self.prepare_line_paths(n_steps, use_horton_geom)
         self.prepare_overwrite_mapping()
 
         # RUN CALCULATIONS HERE
@@ -444,7 +444,7 @@ class PowerGrid:
             from itertools import repeat
 
             pool = multiprocessing.Pool()
-            other_args = [repeat(x) for x in [self, En, Ee, n_loops, lmods, n_steps, use_interp2d, verbose]]
+            other_args = [repeat(x) for x in [self, En, Ee, n_loops, lmods, n_steps, use_interp2d, verbose, use_horton_geom]]
             if use_interp2d: # slow 2D method
                 pool_results = pool.starmap(_calc_gic_in_grid_2D, zip(n_efields, *other_args))
             else: # fast 1D method
@@ -455,7 +455,7 @@ class PowerGrid:
                 if use_interp2d: # slow 2D method
                     pool_results.append(_calc_gic_in_grid_2D(ne, self, En, Ee, n_loops, lmods, n_steps, use_interp2d, verbose))
                 else:
-                    pool_results.append(_calc_gic_in_grid(ne, self, En, Ee, n_loops, lmods, n_steps, use_interp2d, verbose))
+                    pool_results.append(_calc_gic_in_grid(ne, self, En, Ee, n_loops, lmods, n_steps, use_interp2d, verbose, use_horton_geom))
         # ---------------------------------------------------------------
 
         return pool_results
@@ -528,7 +528,7 @@ class PowerGrid:
                 line_gic[lid + "_GICY"].append(gic_y)
 
                 if print_results and ne == 0:
-                    print("{:<15}{:10.3f}{:10.3f}{:10.3f}".format(lid, gic_x, gic_y, gic_tot))
+                    print("{:<15}{:10.2f}{:10.2f}{:10.2f}".format(lid, gic_x, gic_y, gic_tot))
 
                 if f is not None:
                     f.write(f"{ne}\t{lid}\t{gic_x:.6f}\t{gic_y:.6f}\t{gic_tot:.6f}\n")
@@ -537,77 +537,6 @@ class PowerGrid:
             f.close()
 
         return line_gic
-
-
-    def calc_gic_in_transformers_old(self, gic_mod_results, gicfilepath='', print_results=False, return_xy=False):
-        '''
-        Takes input from the function self.calc_gic_in_grid() and filters
-        results down to transformer level.
-        See also self.calc_gic_in_power_lines().
-
-        Parameters
-        ----------
-        gic_mod_results : list
-            List over timesteps; each element unpacks as:
-            (netconN, netconE, netconT, IlineN, IlineE, Vn_tot, Nsourcevec)
-        gicfilepath : str
-            Optional file output path
-        print_results : bool (default False)
-            Print first timestep values for testing.
-        return_xy : bool (default False) -- remove later
-            If True, also return _GICX and _GICY components
-
-        Returns
-        -------
-        trans_gic : dict
-            Keys:
-              "<ID>"      -> list of GIC_TOT per timestep
-              (optional) "<ID>_GICX", "<ID>_GICY"
-        """
-        '''
-
-        # Dictionary of transformer location as a connection
-        transID = {}
-        for station in self.stations:
-            # Normal transformers:
-            transID[station+'-'+station+'_HV'] = station+'_HV'
-            transID[station+'-'+station+'_LV'] = station+'_LV'
-            # Autotransformers:
-            transID[station+'_LV'+'-'+station] = station+'_LV'
-            transID[station+'-'+station+'_LV'] = station+'_LV'
-            transID[station+'_HV'+'-'+station+'_LV'] = station+'_HV'
-            transID[station+'_LV'+'-'+station+'_HV'] = station+'_HV'
-
-        # Arrays for final results writing:
-        trans_gic = { s+c : [] for s in transID.values() for c in ['', '_GICX', '_GICY'] }
-        scale = 1. # in the transformer neutral
-        for ne in range(len(gic_mod_results)):
-
-            netconN, netconE, netconT, IlineN, IlineE, _, _ = gic_mod_results[ne]
-
-            # TRANFORMER CURRENTS
-            # --------------------
-            for i in range(self.nconnects):
-                codes = self.idx_to_st[self.nodefrom[i]]+'-'+self.idx_to_st[self.nodeto[i]]
-                codes_r = self.idx_to_st[self.nodeto[i]]+'-'+self.idx_to_st[self.nodefrom[i]]
-                if codes in transID or codes_r in transID:
-                    if codes in transID: 
-                        usecode = transID[codes]
-                    elif codes_r in transID: 
-                        usecode = transID[codes_r]
-                    gic_x, gic_y = IlineN[i]*scale, IlineE[i]*scale
-                    gic_tot = gic_x + gic_y
-                    trans_gic[usecode].append(gic_tot)
-                    trans_gic[usecode+'_GICX'].append(gic_x)
-                    trans_gic[usecode+'_GICY'].append(gic_y)
-                    output = "{}\t{:10.3f}\t{:10.3f}\t{:10.3f}".format(usecode, gic_x, gic_y, gic_tot)
-                    if print_results and ne == 0:
-                        if i == 0:
-                            print('\n' + 'TRANSFORMER CURRENTS\n' + '---------------------')
-                            print("{}\t{:>10}\t{:>10}\t{:>10}".format('NAME', 'GIC_N', 'GIC_E', 'GIC_TOT'))
-                        print(output)
-
-        return trans_gic
 
 
     def calc_gic_in_transformers(self, gic_mod_results, gicfilepath='', scale=1., print_results=False, return_id_map=False):
@@ -706,7 +635,7 @@ class PowerGrid:
                 trans_gic[output_id+'_GICY'].append(gic_y)
 
                 if print_results and ne == 0:
-                    print("{:<24}\t{:10.3f}\t{:10.3f}\t{:10.3f}".format(output_id, gic_x, gic_y, gic_tot))
+                    print("{:<24}\t{:10.2f}\t{:10.2f}\t{:10.2f}".format(output_id, gic_x, gic_y, gic_tot))
 
         if return_id_map:
             return trans_gic, id_map
@@ -723,7 +652,7 @@ class PowerGrid:
         netconN, netconE, netconT, IlineN, IlineE, _, _ = gic_mod_results[0]
         for i in range(0, len(netconN)):
             if self.idx_to_st[i] in self.stations:
-                output = "{}\t{:10.3f}\t{:10.3f}\t{:10.3f}".format(self.idx_to_st[i], netconN[i], netconE[i], netconT[i])
+                output = "{}\t{:10.2f}\t{:10.2f}\t{:10.2f}".format(self.idx_to_st[i], netconN[i], netconE[i], netconT[i])
                 if print_results:
                     if i == 0:
                         print('\n' + 'SUBSTATION CURRENTS\n' + '--------------------')
@@ -733,7 +662,7 @@ class PowerGrid:
         print("")
 
 
-    def prepare_line_paths(self, n_steps: int):
+    def prepare_line_paths(self, n_steps: int, use_horton_geom: bool):
         """
         Precompute per-connection geometry and path sampling.
         Call this ONCE before looping over ne.
@@ -811,6 +740,16 @@ class PowerGrid:
             "pathlonsteps": pathlonsteps,
             "R_edge": R_edge,
         }
+
+        # Specific calculations for Horton et al. (2012) example:
+        # (see Appendix equations A3 and A7 for details)
+        if use_horton_geom:
+            phi = np.deg2rad((slat + flat) / 2.)
+
+            self._gicgeom["distance_north"] = ( (111.133 - 0.56*np.cos(2.*phi)) * (flat - slat) )
+            self._gicgeom["distance_east"] = ( (111.5065 - 0.1872*np.cos(2.*phi))
+                * np.cos(phi) * (flon - slon) )
+
 
     def prepare_overwrite_mapping(self):
         """
@@ -917,7 +856,7 @@ class PowerGrid:
 # -------------------------------------------------------------------
 
 # Reworked, faster code for 1D E-fields
-def _calc_gic_in_grid(ne, Grid, enday, eeday, n_loops, lmods, n_steps, use_interp2d, verbose):
+def _calc_gic_in_grid(ne, Grid, enday, eeday, n_loops, lmods, n_steps, use_interp2d, verbose, use_horton_geom):
     '''
     Needs lat, lon, systemmat, earthimp.
     Note: use_interp2d is not supported in this version. Revert to 
@@ -980,6 +919,12 @@ def _calc_gic_in_grid(ne, Grid, enday, eeday, n_loops, lmods, n_steps, use_inter
     Vn_tot = En * cosazi * intline
     Ve_tot = Ee * sinazi * intline
 
+    # Replace voltages with Horton-specific line geometry when calculating
+    # for the Horton (2012) example:
+    if use_horton_geom:
+        Vn_tot = En * g["distance_north"]
+        Ve_tot = Ee * g["distance_east"]
+
     # ===============================================================
     # PART IV: Use V and system matrix to determine current (J)
     # ===============================================================
@@ -1023,10 +968,15 @@ def _calc_gic_in_grid(ne, Grid, enday, eeday, n_loops, lmods, n_steps, use_inter
     # Implemented here as a least-squares solve of:
     # systemmat * netcon = sourcevec
     # --------------------------------------------------------------
-    B = np.vstack([Nsourcevec, Esourcevec]).T
-    X, *_ = np.linalg.lstsq(Grid.systemmat, B, rcond=-1)
-    netconN = X[:, 0]
-    netconE = X[:, 1]
+    B = np.column_stack((Nsourcevec, Esourcevec))
+    grounding_resistance = np.asarray(Grid.r_earth + Grid.r_transformers, dtype=float)
+
+    # Equivalent equation: (Y + Z^-1) V = source.
+    voltage_matrix = Grid.netadmit + np.diag(1. / grounding_resistance)
+    node_voltages = np.linalg.solve(voltage_matrix, B)
+
+    netconN = node_voltages[:, 0] / grounding_resistance
+    netconE = node_voltages[:, 1] / grounding_resistance
     netconT = netconN + netconE
 
     # --------------------------------------------------------------

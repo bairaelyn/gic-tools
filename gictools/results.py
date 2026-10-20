@@ -212,7 +212,7 @@ def print_gic_results(ds, timestep=0, data="both"):
             north = row[f"{category}_gic_from_north"].item()
             east = row[f"{category}_gic_from_east"].item()
             total = row[f"{category}_gic_total"].item()
-            print(f"{str(asset_id):<24}\t{north:12.3f}\t{east:12.3f}\t{total:12.3f}")
+            print(f"{str(asset_id):<24}\t{north:12.2f}\t{east:12.2f}\t{total:12.2f}")
 
 
 def rename_transformers(gic_trans, transformer_codes, ignore_duplicates=True):
