@@ -72,14 +72,14 @@ def find_ppmcc(arr1, arr2):
     Calculates the Pearson Product-Moment Correlation Coefficient for a sample
     between two arrays according to a fitting function.
     For error "minpack.error: Result from function call is not a proper array of floats.",
-    make sure arrays are defined as arr1 = stream1.ndarray[ind_f].astype(float)
+    make sure arrays are defined as .astype(float)
 
     Parameters:
     -----------
     arr1 : List or np.array
-        DataFrame of time series solar wind data with time as the index.
-    i_samples : np.array
-        Indices of samples.
+        Numpy array of data X.
+    arr2 : List or np.array
+        Numpy array of data Y to compare to X.
 
     Returns:
     --------

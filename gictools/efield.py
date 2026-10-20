@@ -170,7 +170,7 @@ def load_WIC_data_from_web(starttime, endtime=''):
     return datestr2num(wic_time), np.array(wic_X), np.array(wic_Y)
 
 
-def make_test_efield(Grid, en_val, ee_val, condmodel='39'):
+def make_test_efield(Grid, en_val, ee_val, n_timesteps=1, condmodel='39'):
     '''Return a geoelectric field for testing in the same format as calc_E functions.
 
     Parameters:
@@ -188,8 +188,8 @@ def make_test_efield(Grid, en_val, ee_val, condmodel='39'):
         Geoelectric field arrays accessible by dict key condmodel.
     '''
     En, Ee = {}, {}
-    En[condmodel] = np.zeros((1, Grid.x_ncells, Grid.y_ncells)) + float(en_val)
-    Ee[condmodel] = np.zeros((1, Grid.x_ncells, Grid.y_ncells)) + float(ee_val)
+    En[condmodel] = np.zeros((n_timesteps, Grid.x_ncells, Grid.y_ncells)) + float(en_val)
+    Ee[condmodel] = np.zeros((n_timesteps, Grid.x_ncells, Grid.y_ncells)) + float(ee_val)
     return (En, Ee)
 
 

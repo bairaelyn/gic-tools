@@ -476,7 +476,7 @@ class PowerGrid:
             Optional file output path
         print_results : bool (default False)
             Print first timestep values
-        return_xy : bool (default False)
+        return_xy : bool (default False) -- remove later
             If True, also return _GICX and _GICY components
 
         Returns
@@ -496,14 +496,11 @@ class PowerGrid:
             id_to_index[str(lid)] = i  # IDs are unique
 
         # Initialize output dictionary
-        if return_xy:
-            line_gic = {
-                lid + suffix: []
-                for lid in id_to_index.keys()
-                for suffix in ["", "_GICX", "_GICY"]
-            }
-        else:
-            line_gic = {lid: [] for lid in id_to_index.keys()}
+        line_gic = {
+            lid + suffix: []
+            for lid in id_to_index.keys()
+            for suffix in ["", "_GICX", "_GICY"]
+        }
 
         # Optional file output
         f = None
@@ -527,10 +524,8 @@ class PowerGrid:
                 gic_tot = gic_x + gic_y  # same convention as transformers
 
                 line_gic[lid].append(gic_tot)
-
-                if return_xy:
-                    line_gic[lid + "_GICX"].append(gic_x)
-                    line_gic[lid + "_GICY"].append(gic_y)
+                line_gic[lid + "_GICX"].append(gic_x)
+                line_gic[lid + "_GICY"].append(gic_y)
 
                 if print_results and ne == 0:
                     print("{:<15}{:10.3f}{:10.3f}{:10.3f}".format(lid, gic_x, gic_y, gic_tot))
@@ -544,7 +539,7 @@ class PowerGrid:
         return line_gic
 
 
-    def calc_gic_in_transformers(self, gic_mod_results, gicfilepath='', print_results=False, return_xy=False):
+    def calc_gic_in_transformers_old(self, gic_mod_results, gicfilepath='', print_results=False, return_xy=False):
         '''
         Takes input from the function self.calc_gic_in_grid() and filters
         results down to transformer level.
@@ -559,7 +554,7 @@ class PowerGrid:
             Optional file output path
         print_results : bool (default False)
             Print first timestep values for testing.
-        return_xy : bool (default False)
+        return_xy : bool (default False) -- remove later
             If True, also return _GICX and _GICY components
 
         Returns
@@ -593,7 +588,7 @@ class PowerGrid:
             # TRANFORMER CURRENTS
             # --------------------
             for i in range(self.nconnects):
-                codes = self.idx_to_st[self.nodefrom[i]]+'-'+self.idx_to_st[self.nodeto[i]], 
+                codes = self.idx_to_st[self.nodefrom[i]]+'-'+self.idx_to_st[self.nodeto[i]]
                 codes_r = self.idx_to_st[self.nodeto[i]]+'-'+self.idx_to_st[self.nodefrom[i]]
                 if codes in transID or codes_r in transID:
                     if codes in transID: 
@@ -603,9 +598,8 @@ class PowerGrid:
                     gic_x, gic_y = IlineN[i]*scale, IlineE[i]*scale
                     gic_tot = gic_x + gic_y
                     trans_gic[usecode].append(gic_tot)
-                    if return_xy:
-                        trans_gic[usecode+'_GICX'].append(gic_x)
-                        trans_gic[usecode+'_GICY'].append(gic_y)
+                    trans_gic[usecode+'_GICX'].append(gic_x)
+                    trans_gic[usecode+'_GICY'].append(gic_y)
                     output = "{}\t{:10.3f}\t{:10.3f}\t{:10.3f}".format(usecode, gic_x, gic_y, gic_tot)
                     if print_results and ne == 0:
                         if i == 0:
@@ -613,6 +607,109 @@ class PowerGrid:
                             print("{}\t{:>10}\t{:>10}\t{:>10}".format('NAME', 'GIC_N', 'GIC_E', 'GIC_TOT'))
                         print(output)
 
+        return trans_gic
+
+
+    def calc_gic_in_transformers(self, gic_mod_results, gicfilepath='', scale=1., print_results=False, return_id_map=False):
+        """
+        Extract transformer currents, numbering repeated transformer IDs.
+
+        Parameters
+        ----------
+        gic_mod_results : list
+            Timestep results from calc_gic_in_grid().
+        gicfilepath : str, default=''
+            Reserved for compatibility; currently unused.
+        print_results : bool, default=False
+            Print currents for the first timestep.
+        return_xy : bool, default=False
+            If True, also return '_GICX' and '_GICY' contributions.
+        return_id_map : bool, default=False
+            If True, also return output IDs mapped to full endpoint codes.
+
+        Returns
+        -------
+        trans_gic : dict
+            Transformer IDs mapped to current lists per timestep.
+            Repeated IDs receive '_1', '_2', etc., after the first
+            unsuffixed occurrence. Optional component keys use
+            '_GICX' and '_GICY'.
+        id_map : dict, optional
+            Populated output IDs mapped to ordered endpoint codes,
+            e.g. 'Sub4_HV_1': 'Sub4_HV-Sub4_LV'.
+            Returned only when return_id_map=True.
+        """
+
+        # Map endpoint combinations to original transformer IDs.
+        transID = {}
+        for station in self.stations:
+            # Normal transformers:
+            transID[station+'-'+station+'_HV'] = station+'_HV'
+            transID[station+'-'+station+'_LV'] = station+'_LV'
+
+            # Autotransformers:
+            transID[station+'_LV'+'-'+station] = station+'_LV'
+            transID[station+'-'+station+'_LV'] = station+'_LV'
+            transID[station+'_HV'+'-'+station+'_LV'] = station+'_HV'
+            transID[station+'_LV'+'-'+station+'_HV'] = station+'_HV'
+
+        # Assign output IDs once, preserving every matching connection.
+        transformer_connections = {}
+        id_map = {}
+        counts = {}
+
+        for i in range(self.nconnects):
+            from_node = self.idx_to_st[self.nodefrom[i]]
+            to_node = self.idx_to_st[self.nodeto[i]]
+            codes = from_node+'-'+to_node
+            codes_r = to_node+'-'+from_node
+
+            if codes in transID:
+                usecode = transID[codes]
+            elif codes_r in transID:
+                usecode = transID[codes_r]
+            else:
+                continue
+
+            count = counts.get(usecode, 0)
+            output_id = usecode if count == 0 else f"{usecode}_{count}"
+            counts[usecode] = count + 1
+
+            transformer_connections[output_id] = i
+            id_map[output_id] = codes
+
+        # Preserve empty placeholders for unmatched original IDs.
+        output_ids = dict.fromkeys(transID.values())
+        output_ids.update(dict.fromkeys(transformer_connections))
+
+        suffixes = ("", "_GICX", "_GICY")
+        trans_gic = {
+            output_id+suffix: []
+            for output_id in output_ids
+            for suffix in suffixes
+        }
+
+        for ne, result in enumerate(gic_mod_results):
+            _, _, _, IlineN, IlineE, _, _ = result
+
+            if print_results and ne == 0:
+                print('\nTRANSFORMER CURRENTS\n---------------------')
+                print("{:<24}\t{:>10}\t{:>10}\t{:>10}".format('NAME', 'GIC_N', 'GIC_E', 'GIC_TOT'))
+
+            for output_id, i in transformer_connections.items():
+                gic_x = IlineN[i]*scale
+                gic_y = IlineE[i]*scale
+                gic_tot = gic_x + gic_y
+
+                trans_gic[output_id].append(gic_tot)
+                trans_gic[output_id+'_GICX'].append(gic_x)
+                trans_gic[output_id+'_GICY'].append(gic_y)
+
+                if print_results and ne == 0:
+                    print("{:<24}\t{:10.3f}\t{:10.3f}\t{:10.3f}".format(output_id, gic_x, gic_y, gic_tot))
+
+        if return_id_map:
+            return trans_gic, id_map
         return trans_gic
 
 
