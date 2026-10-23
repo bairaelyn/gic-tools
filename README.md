@@ -190,9 +190,3 @@ The output of the script, which can be compared to Table VII in the Horton paper
 | Sub8 | 60.90 | 134.86 | 195.76 |
 
 Small discrepancies are due to the Sub6 -> Sub7 -> Sub8 line being treated as a Sub6 -> Sub8 line.
-
-## Questions and contributions
-
-Use the [repository issue tracker](https://github.com/bairaelyn/gic-tools/issues) for bug reports and questions. Include the relevant configuration, input shapes, calculation options, traceback, and a small reproducible example where possible.
-
-Before distributing code or network data, confirm the applicable repository license and data permissions. License and citation files were not available for verification when this draft was prepared.
